@@ -1,5 +1,6 @@
 "use client"
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -9,25 +10,38 @@ import { ThemeProvider, useTheme } from '@/context/ThemeContext'
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [mounted, setMounted] = useState(false)
-  const [userName, setUserName] = useState('Desti A.')
-  const [teamName, setTeamName] = useState('Team GeoPoly')
+  const [userName, setUserName] = useState('Bima')
+  const [teamName, setTeamName] = useState('Team AIBot')
+  const [competitionTrack, setCompetitionTrack] = useState('National Science Fair Track')
   const [unreadCount, setUnreadCount] = useState(0)
+
+  // State untuk Modal Settings
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [formTeamName, setFormTeamName] = useState('Team AIBot')
+  const [formLeadName, setFormLeadName] = useState('Bima')
+  const [formTrack, setFormTrack] = useState('National Science Fair Track')
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   // Ambil state dan fungsi toggle dari ThemeContext global
   const { isDarkMode, toggleDarkMode } = useTheme()
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setMounted(true)
-    }, 0)
-
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user?.user_metadata) {
         const metadata = session.user.user_metadata
-        if (metadata?.lead_name) setUserName(metadata.lead_name)
-        if (metadata?.team_name) setTeamName(metadata.team_name)
+        if (metadata?.lead_name) {
+          setUserName(metadata.lead_name)
+          setFormLeadName(metadata.lead_name)
+        }
+        if (metadata?.team_name) {
+          setTeamName(metadata.team_name)
+          setFormTeamName(metadata.team_name)
+        }
+        if (metadata?.competition_track) {
+          setCompetitionTrack(metadata.competition_track)
+          setFormTrack(metadata.competition_track)
+        }
       }
 
       const { count, error } = await supabase
@@ -41,10 +55,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
 
     getDashboardData()
-
-    return () => {
-      window.clearTimeout(timer)
-    }
   }, [])
 
   const handleSignOut = async () => {
@@ -52,9 +62,24 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     router.push('/login')
   }
 
-  // Mencegah mismatch render server & client saat awal memuat halaman
-  if (!mounted) {
-    return null
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setTeamName(formTeamName)
+    setUserName(formLeadName)
+    setCompetitionTrack(formTrack)
+
+    // Simpan perubahan ke Supabase Auth Metadata agar permanen saat di-refresh
+    await supabase.auth.updateUser({
+      data: {
+        lead_name: formLeadName,
+        team_name: formTeamName,
+        competition_track: formTrack
+      }
+    })
+
+    setIsSettingsOpen(false)
+    setToastMessage("Settings updated successfully!")
+    setTimeout(() => setToastMessage(null), 4000)
   }
 
   return (
@@ -67,12 +92,17 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       {/* Sidebar Global */}
       <aside className={`hidden lg:flex flex-col w-60 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`}>
         <div className="flex items-center gap-3 mb-5">
-          <span className="w-10 h-10 rounded-xl bg-[#F59E0B] text-white grid place-items-center shadow-sm">
-            <i className="fa-solid fa-seedling"></i>
-          </span>
+          <Image
+            src="/InnovaSeed-Logo.png"
+            alt="InnovaSeed Logo"
+            width={40}
+            height={40}
+            className="rounded-xl object-cover shadow-sm border border-amber-500/30 bg-amber-500/10"
+            priority
+          />
           <div>
             <b className="text-[15px]">InnovaSeed <span className="text-[#F59E0B]">v2</span></b>
-            <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Young Innovator Hub 2025</p>
+            <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Young Innovator Hub 2026</p>
           </div>
         </div>
         
@@ -108,10 +138,20 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
               </span>
             )}
           </Link>
+          <Link href="/dashboard/portfolio" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/portfolio') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+             <i className="fa-solid fa-folder-closed w-4 text-center"></i>Portfolio Showcase
+          </Link>
         </nav>
 
-        {/* Bagian Bawah: Profil User & Tombol Sign Out */}
-        <div className={`mt-auto pt-4 border-t space-y-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]'}`}>
+        {/* Bagian Bawah: Tombol Settings & Profil User */}
+        <div className={`mt-auto pt-4 border-t space-y-2 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]'}`}>
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]'}`}
+          >
+            <i className="fa-solid fa-gear w-4 text-center text-amber-500"></i>Settings &amp; Profile
+          </button>
+
           <div className="flex items-center gap-3">
             <span className="w-9 h-9 rounded-full bg-[#FEF3C7] text-[#855300] text-xs font-bold grid place-items-center shrink-0">
               {userName.substring(0, 2).toUpperCase()}
@@ -147,7 +187,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             <span className="w-5 h-5 rounded-md bg-[#F59E0B] text-white grid place-items-center text-[10px]">
               <i className="fa-solid fa-star"></i>
             </span>
-            <span className="truncate max-w-60">{teamName} • National Science Fair Track</span>
+            <span className="truncate max-w-60">{teamName} &bull; {competitionTrack}</span>
             <i className="fa-solid fa-chevron-down text-[10px] opacity-60 ml-1"></i>
           </div>
 
@@ -186,6 +226,100 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      {/* Modal Settings Pop-up */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+            <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <i className="fa-solid fa-gear text-amber-500"></i> Dashboard Settings
+              </h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <i className="fa-solid fa-xmark text-lg"></i>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold mb-1">Team Name</label>
+                <input 
+                  type="text" 
+                  value={formTeamName}
+                  onChange={(e) => setFormTeamName(e.target.value)}
+                  className={`w-full rounded-xl px-3 py-2 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Lead Author Name</label>
+                <input 
+                  type="text" 
+                  value={formLeadName}
+                  onChange={(e) => setFormLeadName(e.target.value)}
+                  className={`w-full rounded-xl px-3 py-2 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Competition Track</label>
+                <select 
+                  value={formTrack}
+                  onChange={(e) => setFormTrack(e.target.value)}
+                  className={`w-full rounded-xl px-3 py-2 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                >
+                  <option value="National Science Fair Track">National Science Fair Track</option>
+                  <option value="Young Innovator Hub 2025">Young Innovator Hub 2025</option>
+                  <option value="AI & Software Engineering Track">AI & Software Engineering Track</option>
+                </select>
+              </div>
+
+              <div className={`p-3 rounded-xl border flex items-center justify-between mt-2 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-[#fff1e5]/50 border-[#d8c3ad]'}`}>
+                <div>
+                  <b className="block">Theme Mode</b>
+                  <span className="text-[10px] text-slate-400">{isDarkMode ? 'Dark Mode Active' : 'Light Mode Active'}</span>
+                </div>
+                <button 
+                  type="button"
+                  onClick={toggleDarkMode}
+                  className="px-3 py-1.5 rounded-lg font-bold text-xs bg-amber-500 text-slate-950 cursor-pointer"
+                >
+                  Toggle Theme
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="px-4 py-2 font-semibold text-slate-500 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-5 py-2 font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] shadow-sm cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs">
+          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
+            <i className="fa-solid fa-check"></i>
+          </span>
+          <div>
+            <b className="block text-slate-200">Success</b>
+            <p className="text-slate-400">{toastMessage}</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

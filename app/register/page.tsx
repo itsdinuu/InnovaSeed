@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
@@ -72,11 +73,15 @@ export default function RegisterPage() {
       <aside className="hidden lg:flex flex-col justify-between p-10 text-white bg-linear-to-b from-stone-950 via-stone-900 to-amber-950">
         <div>
           <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl bg-white text-amber-500 grid place-items-center">
-              <i className="fa-solid fa-seedling"></i>
-            </span>
+            <Image
+              src="/InnovaSeed-Logo.png"
+              alt="InnovaSeed Logo"
+              width={40}
+              height={40}
+              className="rounded-xl object-cover shadow-sm border border-amber-500/30 bg-amber-500/10"
+            />
             <div>
-              <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">PROD-v2.8</span></b>
+              <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">v1.0</span></b>
               <p className="text-xs text-slate-400">A Plego Indonesia Product</p>
             </div>
           </div>
@@ -131,7 +136,17 @@ export default function RegisterPage() {
       <main className="flex flex-col justify-center px-6 sm:px-12 xl:px-20 py-10">
         <form onSubmit={handleRegister} className="w-full max-w-129 mx-auto">
           <div className="flex justify-between text-[11px] tracking-wider font-semibold text-slate-600">
-            <span><i className="fa-solid fa-seedling text-amber-500 mr-2"></i>TEAM REGISTRATION</span>
+            <span className="inline-flex items-center gap-2">
+              <Image
+                src="/InnovaSeed-Logo.png"
+                alt="InnovaSeed Logo"
+                width={40}
+                height={40}
+                className="rounded-xl object-cover shadow-sm border border-amber-500/30 bg-amber-500/10"
+                priority
+              />
+              TEAM REGISTRATION 
+            </span>
             <Link href="#" className="font-normal text-slate-500 tracking-normal hover:underline"><i className="fa-regular fa-circle-question mr-1"></i> Helpdesk &amp; FAQ</Link>
           </div>
 
@@ -176,7 +191,7 @@ export default function RegisterPage() {
             <div className="sm:col-span-2">
               <div className="flex justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-700">Institutional Email</label>
-                <span className="text-[11px] text-slate-400">e.g., student.lead@smkn8jkt.sch.id</span>
+                <span className="text-[11px] text-slate-400">e.g., student.lead@Innovaseed.sch.id</span>
               </div>
               <div className="relative">
                 <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
@@ -186,7 +201,7 @@ export default function RegisterPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                   className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="student.lead@smkn8jkt.sch.id"
+                  placeholder="student.lead@innovaseed.sch.id"
                 />
               </div>
             </div>
@@ -200,7 +215,7 @@ export default function RegisterPage() {
                   value={formData.institution}
                   onChange={(e) => setFormData({...formData, institution: e.target.value})}
                   className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="e.g., SMKN 8 Jakarta"
+                  placeholder="e.g., Plego National High School"
                 />
               </div>
             </div>

@@ -1,5 +1,6 @@
 "use client"
 
+import Image from 'next/image'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
@@ -69,11 +70,16 @@ export default function LoginPage() {
         <div>
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <span className="w-10 h-10 rounded-xl bg-white text-amber-500 grid place-items-center">
-                <i className="fa-solid fa-seedling"></i>
-              </span>
+              <Image
+                src="/InnovaSeed-Logo.png"
+                alt="InnovaSeed Logo"
+                width={40}
+                height={40}
+                className="rounded-xl object-cover shadow-sm border border-amber-500/30 bg-amber-500/10"
+                priority
+              />
               <div>
-                <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">PROD-v2.8</span></b>
+                <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">v1.0</span></b>
                 <p className="text-xs text-slate-400">A Plego Indonesia Product</p>
               </div>
             </div>
@@ -124,7 +130,17 @@ export default function LoginPage() {
       <main className="flex flex-col justify-center px-6 sm:px-12 xl:px-16 py-10">
         <div className="w-full max-w-130 mx-auto">
           <div className="flex justify-between text-[11px] tracking-wider font-semibold text-slate-600">
-            <span><i className="fa-solid fa-seedling text-amber-500 mr-2"></i>INSTITUTIONAL ACCESS HUB</span>
+            <span className="inline-flex items-center gap-2">
+              <Image
+                src="/InnovaSeed-Logo.png"
+                alt="InnovaSeed Logo"
+                width={40}
+                height={40}
+                className="rounded-xl object-cover shadow-sm border border-amber-500/30 bg-amber-500/10"
+                priority
+              />
+              INSTITUTIONAL ACCESS HUB
+            </span>
             <Link href="#" className="font-normal text-slate-500 tracking-normal hover:underline">Helpdesk &amp; FAQ</Link>
           </div>
 
@@ -261,10 +277,10 @@ export default function LoginPage() {
 
           <p className="text-center text-[11px] text-slate-400 mt-6">
             Protected by Plego Indonesia 256-bit ISO/IEC data protection layer.<br />
-            <Link href="#" className="underline text-sm text-slate-700 font-medium">Contact Accelerator Registrar</Link>
+            <Link href="mailto:destiandhini62@gmail.com" className="underline text-sm text-slate-700 font-medium">Contact Accelerator Registrar</Link>
           </p>
         </div>
-      </main>
+      </main> 
     </div>
   )
 }
