@@ -35,42 +35,68 @@ export default function MentorFeedbackPage() {
   const [replyMessage, setReplyMessage] = useState('')
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-  useEffect(() => {
-    async function fetchFeedbacksAndReplies() {
-      setLoading(true)
+  async function fetchFeedbacksAndReplies() {
+    setLoading(true)
 
-      const { data: fbData, error: fbError } = await supabase
-        .from('mentor_feedback')
+    const { data: fbData, error: fbError } = await supabase
+      .from('mentor_feedback')
+      .select('*')
+      .order('id', { ascending: false })
+
+    if (!fbError && fbData) {
+      const { data: replyData, error: replyError } = await supabase
+        .from('mentor_replies')
         .select('*')
-        .order('id', { ascending: false })
+        .order('id', { ascending: true })
 
-      if (!fbError && fbData) {
-        const { data: replyData, error: replyError } = await supabase
-          .from('mentor_replies')
-          .select('*')
-          .order('id', { ascending: true })
-
-        if (!replyError && replyData) {
-          const combined = fbData.map(fb => ({
-            ...fb,
-            replies: replyData.filter(r => Number(r.feedback_id) === Number(fb.id))
-          }))
-          setFeedbacks(combined)
-        } else {
-          setFeedbacks(fbData)
-        }
-
-        // Tandai semua sebagai terbaca di database secara latar belakang
-        await supabase
-          .from('mentor_feedback')
-          .update({ is_read: true })
-          .eq('is_read', false)
+      if (!replyError && replyData) {
+        const combined = fbData.map(fb => ({
+          ...fb,
+          replies: replyData.filter(r => Number(r.feedback_id) === Number(fb.id))
+        }))
+        setFeedbacks(combined)
+      } else {
+        setFeedbacks(fbData)
       }
 
-      setLoading(false)
+      // Tandai semua sebagai terbaca di database secara latar belakang
+      await supabase
+        .from('mentor_feedback')
+        .update({ is_read: true })
+        .eq('is_read', false)
     }
 
-    fetchFeedbacksAndReplies()
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    const initialFetchTimer = window.setTimeout(() => {
+      void fetchFeedbacksAndReplies()
+    }, 0)
+
+    // --- REALTIME SUBSCRIPTION SUPABASE (WEBSOCKET) ---
+    const channel = supabase
+      .channel('realtime-student-mentor-feedback')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mentor_feedback' },
+        () => {
+          void fetchFeedbacksAndReplies()
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mentor_replies' },
+        () => {
+          void fetchFeedbacksAndReplies()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      window.clearTimeout(initialFetchTimer)
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   async function handleFeedbackRead(id: number | string) {
@@ -82,8 +108,8 @@ export default function MentorFeedbackPage() {
     
     setToastMessage("Feedback acknowledged successfully!")
     setTimeout(() => {
-      setToastsAndReload()
-    }, 1500)
+      setToastMessage(null)
+    }, 3000)
   }
 
   async function handleSendReply(e: React.FormEvent) {
@@ -121,29 +147,26 @@ export default function MentorFeedbackPage() {
         return fb
       }))
 
-      setToastMessage(`Reply successfully sent to ${replyingFeedback.mentor_name}!`)
+      setToastMessage(`Reply successfully sent to ${replyingFeedback.mentor_name || 'Faculty Mentor'}!`)
       setReplyingFeedback(null)
       setReplyMessage('')
       
       setTimeout(() => {
-        setToastsAndReload()
-      }, 1500)
+        setToastMessage(null)
+      }, 3000)
     } else {
       alert("Failed to send reply: " + error?.message)
     }
   }
 
-  // Fungsi pembantu untuk merefresh halaman agar sidebar bersih total dari badge "New"
-  function setToastsAndReload() {
-    window.location.reload()
-  }
-
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative max-w-4xl mx-auto">
       {/* Header Halaman */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold">Mentor Feedback &amp; Review 💬</h1>
+          <h1 className="text-2xl font-extrabold flex items-center gap-2">
+            <i className="fa-solid fa-comments text-amber-500"></i> Mentor Feedback &amp; Review 💬
+          </h1>
           <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
             Review real evaluations from faculty advisors and track discussion history.
           </p>
@@ -156,7 +179,7 @@ export default function MentorFeedbackPage() {
       ) : feedbacks.length === 0 ? (
         <div className={`border rounded-2xl p-12 text-center shadow-xs space-y-3 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
           <div className="w-12 h-12 bg-amber-500/10 text-amber-600 rounded-xl grid place-items-center mx-auto text-lg">
-            <i className="fa-solid fa-comments"></i>
+            <i className="fa-solid fa-envelope-open-text"></i>
           </div>
           <h3 className="font-bold">No Mentor Feedback Recorded</h3>
           <p className={`text-xs max-w-sm mx-auto ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
@@ -190,14 +213,14 @@ export default function MentorFeedbackPage() {
                       )}
                     </div>
                     <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-                      Faculty Reviewer • <span className="font-mono text-[10px]">{fb.created_at || 'Recent'}</span>
+                      Faculty Reviewer • <span className="font-mono text-[10px]">{fb.created_at ? new Date(fb.created_at).toLocaleDateString('id-ID', { dateStyle: 'medium' }) : 'Recent'}</span>
                     </p>
                   </div>
                 </div>
               </div>
 
               {/* Isi Komentar Mentor */}
-              <div className={`border rounded-xl p-4 text-xs leading-relaxed font-medium ${isDarkMode ? 'bg-slate-800/50 border-slate-800 text-slate-300' : 'bg-[#fff1e5]/50 border-[#d8c3ad]/50 text-[#221a12]'}`}>
+              <div className={`border rounded-xl p-4 text-xs sm:text-sm leading-relaxed font-medium ${isDarkMode ? 'bg-slate-800/50 border-slate-800 text-slate-300' : 'bg-[#fff1e5]/50 border-[#d8c3ad]/50 text-[#221a12]'}`}>
                 &ldquo;{fb.comment || fb.feedback_text || 'No comment provided.'}&rdquo;
               </div>
 
@@ -212,7 +235,9 @@ export default function MentorFeedbackPage() {
                         className={`p-3 rounded-xl border text-xs space-y-1 ${isDarkMode ? 'bg-slate-800/80 border-slate-700 text-slate-200' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-bold text-amber-600 dark:text-amber-400"><i className="fa-solid fa-reply mr-1.5 text-[10px]"></i>{reply.sender_name}</span>
+                          <span className="font-bold text-amber-600 dark:text-amber-400">
+                            <i className="fa-solid fa-reply mr-1.5 text-[10px]"></i>{reply.sender_name}
+                          </span>
                           <span className="text-[9px] text-slate-400 font-mono">{reply.created_at ? reply.created_at.split('T')[0] : ''}</span>
                         </div>
                         <p className={`text-xs pl-4 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{reply.message}</p>
@@ -248,7 +273,7 @@ export default function MentorFeedbackPage() {
           <div className={`w-full max-w-md p-6 rounded-2xl border shadow-2xl space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
             <div className="flex items-center justify-between border-b pb-3 border-inherit">
               <div>
-                <h3 className="font-bold text-sm">Reply to {replyingFeedback.mentor_name}</h3>
+                <h3 className="font-bold text-sm">Reply to {replyingFeedback.mentor_name || 'Faculty Mentor'}</h3>
                 <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Send clarification or progress update.</p>
               </div>
               <button 

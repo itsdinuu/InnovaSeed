@@ -214,9 +214,9 @@ export default function IdeaBankPage() {
           <div className="text-[11px] text-indigo-500 font-semibold">Active build phase</div>
         </div>
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
-          <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Avg. Feasibility Score</div>
+          <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Avg. Self-Assessed Score</div>
           <div className="text-2xl font-black">{avgScore} <span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-[#534434]'}`}>/10</span></div>
-          <div className={`text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Mentor-rated</div>
+          <div className={`text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Student evaluated</div>
         </div>
       </div>
 
@@ -336,12 +336,13 @@ export default function IdeaBankPage() {
             <div>
               <h3 className="font-bold text-sm">Have a new idea?</h3>
               <p className={`text-[11px] mt-1 max-w-xs px-2 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-                Describe the problem, your hypothesis and the impact. Mentors will rate feasibility.
+                Describe the problem, your hypothesis and the impact. Submit your self-assessment.
               </p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold bg-[#F59E0B] text-[#0F172A] shadow-sm">
               <i className="fa-solid fa-plus"></i> Capture New Idea
             </span>
+
           </div>
 
         </div>
@@ -399,7 +400,7 @@ export default function IdeaBankPage() {
                   </select>
                 </div>
                 <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Feasibility Score (0 - 10)</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Self-Assessment Feasibility (0 - 10)</label>
                   <input 
                     type="number" 
                     step="0.1"

@@ -39,7 +39,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Menu Navigasi Utama (Bisa Diklik Berpindah Halaman) */}
+        {/* Menu Navigasi Utama */}
         <nav className="space-y-1 text-sm">
           <Link 
             href="/mentor" 
@@ -72,6 +72,28 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
             }`}
           >
             <i className="fa-solid fa-folder-tree w-4 text-center"></i>Student Submissions
+          </Link>
+
+          {/* Menu Competition Control yang baru ditambahkan */}
+          <Link 
+            href="/mentor/competition-prep" 
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${
+              pathname?.includes('/competition-prep') 
+                ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') 
+                : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')
+            }`}
+          >
+            <i className="fa-solid fa-trophy w-4 text-center"></i>Competition Control
+          </Link>
+
+            <Link 
+            href="/mentor/teams" 
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${
+              pathname?.includes('/teams') 
+                ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') 
+                : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')
+            }`}>
+            <i className="fa-solid fa-users-gear w-4 text-center"></i>Team Management
           </Link>
         </nav>
 

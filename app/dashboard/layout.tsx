@@ -3,28 +3,47 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { ThemeProvider, useTheme } from '@/context/ThemeContext'
+
+type TeamRealtimePayload = {
+  new?: {
+    team_name?: string
+    lead_name?: string
+    members?: string[]
+    mentor_code?: string
+  }
+}
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [userName, setUserName] = useState('Bima')
-  const [teamName, setTeamName] = useState('Team AIBot')
+  const [userName, setUserName] = useState('Bayu')
+  const [teamName, setTeamName] = useState('Independent Innovator')
   const [competitionTrack, setCompetitionTrack] = useState('National Science Fair Track')
   const [unreadCount, setUnreadCount] = useState(0)
 
-  // State untuk Modal Settings
+  // State untuk Modal Settings & Team Management (Termasuk Mentor Code)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [formTeamName, setFormTeamName] = useState('Team AIBot')
-  const [formLeadName, setFormLeadName] = useState('Bima')
+  const [formTeamName, setFormTeamName] = useState('Independent Innovator')
+  const [formLeadName, setFormLeadName] = useState('Bayu')
   const [formTrack, setFormTrack] = useState('National Science Fair Track')
+  const [formMentorCode, setFormMentorCode] = useState('')
+  
+  // State anggota tim
+  const [teamMembers, setTeamMembers] = useState<string[]>([])
+  const [newMemberName, setNewMemberName] = useState('')
+  const [teamRecordId, setTeamRecordId] = useState<number | null>(null)
+
+  // State untuk Hover Popup Info Tim (Online Status)
+  const [isTeamHovered, setIsTeamHovered] = useState(false)
+
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const { isDarkMode, toggleDarkMode } = useTheme()
 
-  const fetchUnreadCount = async () => {
+  const fetchUnreadCount = useCallback(async () => {
     const { count, error } = await supabase
       .from('mentor_feedback')
       .select('*', { count: 'exact', head: true })
@@ -33,25 +52,58 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     if (!error && count !== null) {
       setUnreadCount(count)
     }
-  }
+  }, [])
 
   useEffect(() => {
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
+      const defaultLeadName = session?.user?.user_metadata?.lead_name ?? 'Bayu'
+
       if (session?.user?.user_metadata) {
         const metadata = session.user.user_metadata
         if (metadata?.lead_name) {
           setUserName(metadata.lead_name)
           setFormLeadName(metadata.lead_name)
         }
-        if (metadata?.team_name) {
-  
-          setTeamName(metadata.team_name)
-          setFormTeamName(metadata.team_name)
+      }
+
+      // Ambil data tim dari Supabase
+      const { data: teamData, error } = await supabase
+        .from('teams')
+        .select('*')
+        .limit(1)
+        .single()
+
+      if (!error && teamData) {
+        setTeamRecordId(teamData.id)
+        setTeamName(teamData.team_name)
+        setFormTeamName(teamData.team_name)
+        if (teamData.lead_name) {
+          setUserName(teamData.lead_name)
+          setFormLeadName(teamData.lead_name)
         }
-        if (metadata?.competition_track) {
-          setCompetitionTrack(metadata.competition_track)
-          setFormTrack(metadata.competition_track)
+        if (teamData.members && Array.isArray(teamData.members)) {
+          setTeamMembers(teamData.members)
+        }
+        if (teamData.mentor_code) {
+          setFormMentorCode(teamData.mentor_code)
+        }
+      } else {
+        // Jika belum ada tim sama sekali, buat otomatis sebagai Lead
+        const { data: newTeam } = await supabase
+          .from('teams')
+          .insert([{
+            team_name: 'Independent Innovator',
+            lead_name: defaultLeadName,
+            members: [],
+            cohort_batch: 'National Science Fair Track',
+            mentor_code: ''
+          }])
+          .select()
+          .single()
+
+        if (newTeam) {
+          setTeamRecordId(newTeam.id)
         }
       }
 
@@ -60,28 +112,69 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     getDashboardData()
 
-    // --- FITUR SUPABASE REALTIME (WEBBSOCKET) ---
-    // Mendengarkan perubahan data pada tabel mentor_feedback secara real-time
-    const channel = supabase
-      .channel('realtime-mentor-feedback')
+    // --- REALTIME SUBSCRIPTION SUPABASE (WEBSOCKET) ---
+    const realtimeChannel = supabase
+      .channel('realtime-dashboard-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'teams' },
+        (payload: TeamRealtimePayload) => {
+          console.log('Realtime team update:', payload)
+          if (payload.new) {
+            setTeamName((currentTeamName) => payload.new?.team_name ?? currentTeamName)
+            setUserName((currentUserName) => payload.new?.lead_name ?? currentUserName)
+            setTeamMembers(payload.new.members || [])
+            if (payload.new.mentor_code !== undefined) {
+              setFormMentorCode(payload.new.mentor_code)
+            }
+          }
+        }
+      )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'mentor_feedback' },
-        (payload) => {
-          console.log('Realtime change detected:', payload)
-          fetchUnreadCount() // Otomatis hitung ulang jumlah pesan unread saat ada insert/update
+        () => {
+          fetchUnreadCount()
         }
       )
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      supabase.removeChannel(realtimeChannel)
     }
-  }, [])
+  }, [fetchUnreadCount])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  const handleAddMember = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newMemberName.trim()) return
+
+    const updatedMembers = [...teamMembers, newMemberName.trim()]
+    setTeamMembers(updatedMembers)
+    setNewMemberName('')
+
+    if (teamRecordId) {
+      await supabase
+        .from('teams')
+        .update({ members: updatedMembers })
+        .eq('id', teamRecordId)
+    }
+  }
+
+  const handleRemoveMember = async (indexToRemove: number) => {
+    const updatedMembers = teamMembers.filter((_, idx) => idx !== indexToRemove)
+    setTeamMembers(updatedMembers)
+
+    if (teamRecordId) {
+      await supabase
+        .from('teams')
+        .update({ members: updatedMembers })
+        .eq('id', teamRecordId)
+    }
   }
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -90,16 +183,37 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     setUserName(formLeadName)
     setCompetitionTrack(formTrack)
 
-    await supabase.auth.updateUser({
-      data: {
-        lead_name: formLeadName,
-        team_name: formTeamName,
-        competition_track: formTrack
+    if (teamRecordId) {
+      await supabase
+        .from('teams')
+        .update({
+          team_name: formTeamName,
+          lead_name: formLeadName,
+          members: teamMembers,
+          cohort_batch: formTrack,
+          mentor_code: formMentorCode
+        })
+        .eq('id', teamRecordId)
+    } else {
+      const { data: inserted } = await supabase
+        .from('teams')
+        .insert([{
+          team_name: formTeamName,
+          lead_name: formLeadName,
+          members: teamMembers,
+          cohort_batch: formTrack,
+          mentor_code: formMentorCode
+        }])
+        .select()
+        .single()
+
+      if (inserted) {
+        setTeamRecordId(inserted.id)
       }
-    })
+    }
 
     setIsSettingsOpen(false)
-    setToastMessage("Settings updated successfully!")
+    setToastMessage("Realtime Team & Mentor Code synced successfully!")
     setTimeout(() => setToastMessage(null), 4000)
   }
 
@@ -133,7 +247,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         
-        <Link href="/dashboard/student" className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] w-full mb-5 shadow-sm">
+        <Link href="/dashboard/idea-bank" className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] w-full mb-5 shadow-sm">
           + New Innovation
         </Link>
 
@@ -170,13 +284,85 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           </Link>
         </nav>
 
-        {/* Bagian Bawah: Tombol Settings & Profil User */}
-        <div className={`mt-auto pt-4 border-t space-y-2 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]'}`}>
+        {/* Bagian Bawah: Kartu Info Tim dengan Hover Popup Realtime Online Status */}
+        <div className={`mt-auto pt-4 border-t space-y-2.5 relative ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]'}`}>
+          
+          {/* POPUP HOVER KE ATAS (REALTIME ONLINE MEMBERS & MENTOR CODE) */}
+          {isTeamHovered && (
+            <div className={`absolute bottom-full left-0 right-0 mb-2 p-3 rounded-2xl border shadow-xl transition-all duration-300 transform translate-y-0 opacity-100 z-30 space-y-2 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/50' : 'bg-white border-[#d8c3ad] text-[#221a12] shadow-amber-900/10'}`}>
+              <div className="flex items-center justify-between text-[11px] font-bold border-b pb-1.5 border-inherit">
+                <span className="flex items-center gap-1.5">
+                  <i className="fa-solid fa-users text-amber-500"></i> Team Members
+                </span>
+                <span className="text-amber-500 text-[10px]">
+                  {formMentorCode ? `Code: ${formMentorCode}` : 'No Mentor Code'}
+                </span>
+              </div>
+              
+              <div className="space-y-1.5 max-h-36 overflow-y-auto text-xs">
+                {/* Lead Team */}
+                <div className="flex items-center justify-between py-0.5">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="font-semibold truncate">{userName}</span>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-bold">Lead</span>
+                </div>
+
+                {/* Team Members */}
+                {teamMembers.map((member, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-0.5">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      <span className="truncate text-slate-400 dark:text-slate-300">{member}</span>
+                    </div>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-500 font-medium">Active</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* KARTU INFO TIM (TRIGGER HOVER) */}
+          <div 
+            onMouseEnter={() => setIsTeamHovered(true)}
+            onMouseLeave={() => setIsTeamHovered(false)}
+            className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-all ${isDarkMode ? 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800' : 'bg-[#fff1e5]/70 border-[#d8c3ad]/60 hover:bg-[#fbebdd]'}`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex -space-x-2 shrink-0 overflow-hidden">
+                <span className="w-6 h-6 rounded-full bg-[#F59E0B] text-slate-950 font-bold text-[9px] grid place-items-center border-2 border-white dark:border-slate-900">
+                  {userName.substring(0, 2).toUpperCase()}
+                </span>
+                {teamMembers.slice(0, 2).map((m, idx) => (
+                  <span key={idx} className="w-6 h-6 rounded-full bg-slate-700 text-slate-200 font-bold text-[9px] grid place-items-center border-2 border-white dark:border-slate-900">
+                    {m.substring(0, 2).toUpperCase()}
+                  </span>
+                ))}
+              </div>
+              <div className="min-w-0 text-xs leading-tight">
+                <b className="block truncate text-[11px]">{teamName}</b>
+                <span className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+                  Code: {formMentorCode ? formMentorCode : 'Unlinked'}
+                </span>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
+              Live
+            </span>
+          </div>
+
           <button 
             onClick={() => setIsSettingsOpen(true)}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]'}`}
           >
-            <i className="fa-solid fa-gear w-4 text-center text-amber-500"></i>Settings &amp; Profile
+            <i className="fa-solid fa-gear w-4 text-center text-amber-500"></i>Settings &amp; Team
           </button>
 
           <div className="flex items-center gap-3">
@@ -239,27 +425,27 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Modal Settings */}
+      {/* Modal Settings & Team Management (Termasuk Input Mentor Code) */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
             <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
               <h3 className="font-bold text-base flex items-center gap-2">
-                <i className="fa-solid fa-gear text-amber-500"></i> Dashboard Settings
+                <i className="fa-solid fa-gear text-amber-500"></i> Settings &amp; Team Setup
               </h3>
               <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <i className="fa-solid fa-xmark text-lg"></i>
               </button>
             </div>
 
-            <form onSubmit={handleSaveSettings} className="space-y-3 text-xs">
+            <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
               <div>
                 <label className="block font-semibold mb-1">Team Name</label>
                 <input 
                   type="text" 
                   value={formTeamName}
                   onChange={(e) => setFormTeamName(e.target.value)}
-                  className={`w-full rounded-xl px-3 py-2 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                  className={`w-full rounded-xl px-3 py-2.5 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
                 />
               </div>
 
@@ -269,8 +455,21 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                   type="text" 
                   value={formLeadName}
                   onChange={(e) => setFormLeadName(e.target.value)}
-                  className={`w-full rounded-xl px-3 py-2 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                  className={`w-full rounded-xl px-3 py-2.5 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
                 />
+              </div>
+
+              {/* INPUT KODE MENTOR (KODE KELAS) */}
+              <div>
+                <label className="block font-semibold mb-1 text-amber-500">Mentor Invite Code (e.g. MAYA-2026)</label>
+                <input 
+                  type="text"
+                  placeholder="Masukkan kode mentor..."
+                  value={formMentorCode}
+                  onChange={(e) => setFormMentorCode(e.target.value.toUpperCase())}
+                  className={`w-full rounded-xl px-3 py-2.5 outline-none border font-bold uppercase tracking-wider ${isDarkMode ? 'bg-slate-800 border-amber-500/50 text-white' : 'bg-[#fff8f4] border-amber-500/50 text-[#221a12]'}`}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Masukkan kode dari dosen/mentor agar tim masuk ke dalam daftar bimbingan mereka.</p>
               </div>
 
               <div>
@@ -278,7 +477,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 <select 
                   value={formTrack}
                   onChange={(e) => setFormTrack(e.target.value)}
-                  className={`w-full rounded-xl px-3 py-2 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                  className={`w-full rounded-xl px-3 py-2.5 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
                 >
                   <option value="National Science Fair Track">National Science Fair Track</option>
                   <option value="Young Innovator Hub 2025">Young Innovator Hub 2025</option>
@@ -286,7 +485,47 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </select>
               </div>
 
-              <div className="flex justify-end gap-3 pt-3">
+              {/* Bagian Manajemen Anggota Tim */}
+              <div className="space-y-2 pt-2 border-t border-inherit">
+                <label className="block font-semibold">Team Members (Self-Managed)</label>
+                <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-inherit bg-amber-500/5">
+                  {teamMembers.length > 0 ? (
+                    teamMembers.map((member, idx) => (
+                      <span key={idx} className={`text-xs px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-[#d8c3ad] text-[#534434]'}`}>
+                        <i className="fa-solid fa-user text-[10px] text-amber-500"></i> {member}
+                        <button 
+                          type="button" 
+                          onClick={() => handleRemoveMember(idx)}
+                          className="ml-1 text-red-500 hover:text-red-700 font-bold cursor-pointer"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-slate-400 italic">No members added yet. Add team members freely!</span>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <input 
+                    type="text"
+                    placeholder="Add member name..."
+                    value={newMemberName}
+                    onChange={(e) => setNewMemberName(e.target.value)}
+                    className={`flex-1 rounded-xl px-3 py-2 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                  />
+                  <button 
+                    type="button"
+                    onClick={handleAddMember}
+                    className="px-4 py-2 font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition cursor-pointer"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-inherit">
                 <button 
                   type="button"
                   onClick={() => setIsSettingsOpen(false)}
