@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { useTheme } from '@/context/ThemeContext'
 
 type TaskStatus = 'Backlog' | 'In Progress' | 'Under Review' | 'Completed'
 type TaskPriority = 'Low' | 'Medium' | 'High'
@@ -16,6 +17,7 @@ type Task = {
 }
 
 export default function ProjectWorkspacePage() {
+  const { isDarkMode } = useTheme()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -123,13 +125,13 @@ export default function ProjectWorkspacePage() {
       {/* Header & Add Task Button */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900">Project Workspace Kanban 📋</h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">Manage sprint backlog, engineering milestones, and prototype tasks.</p>
+          <h1 className="text-2xl font-extrabold">Project Workspace Kanban 📋</h1>
+          <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Manage sprint backlog, engineering milestones, and prototype tasks.</p>
         </div>
 
         <button 
           onClick={() => setShowModal(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold bg-amber-500 text-white hover:bg-amber-600 transition shadow-sm cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] transition shadow-sm cursor-pointer"
         >
           <i className="fa-solid fa-plus"></i> Add New Task
         </button>
@@ -144,10 +146,10 @@ export default function ProjectWorkspacePage() {
             const columnTasks = tasks.filter(t => t.status === colStatus)
             
             return (
-              <div key={colStatus} className="bg-slate-100/70 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+              <div key={colStatus} className={`border rounded-2xl p-4 space-y-3 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-[#fff1e5]/60 border-[#d8c3ad]'}`}>
                 
                 {/* Column Header */}
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                <div className={`flex items-center justify-between pb-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/50'}`}>
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${
                       colStatus === 'Backlog' ? 'bg-slate-400' :
@@ -155,9 +157,9 @@ export default function ProjectWorkspacePage() {
                       colStatus === 'Under Review' ? 'bg-blue-500' :
                       'bg-emerald-500'
                     }`}></span>
-                    <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">{colStatus}</h3>
+                    <h3 className="font-bold text-xs uppercase tracking-wider">{colStatus}</h3>
                   </div>
-                  <span className="text-[11px] font-bold px-2 py-0.5 bg-white border border-slate-200 rounded-full text-slate-600">
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-[#d8c3ad] text-[#534434]'}`}>
                     {columnTasks.length}
                   </span>
                 </div>
@@ -165,18 +167,18 @@ export default function ProjectWorkspacePage() {
                 {/* Tasks Container */}
                 <div className="space-y-3 min-h-75">
                   {columnTasks.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
+                    <div className={`text-center py-8 text-xs border border-dashed rounded-xl ${isDarkMode ? 'border-slate-800 text-slate-500' : 'border-[#d8c3ad] text-[#534434]'}`}>
                       No tasks in {colStatus}
                     </div>
                   ) : (
                     columnTasks.map((task) => (
-                      <div key={task.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3 group hover:border-amber-300 transition">
+                      <div key={task.id} className={`border rounded-xl p-4 shadow-xs space-y-3 group transition-colors ${isDarkMode ? 'bg-slate-800/40 border-slate-700/80 text-slate-100 hover:border-amber-500/50' : 'bg-white border-[#d8c3ad] text-[#221a12] hover:border-amber-400'}`}>
                         
                         <div className="flex items-start justify-between gap-2">
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                            task.priority === 'High' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                            task.priority === 'Medium' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                            'bg-slate-50 text-slate-600 border border-slate-200'
+                            task.priority === 'High' ? 'bg-rose-500/10 text-rose-500 border border-rose-500/30' :
+                            task.priority === 'Medium' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30' :
+                            (isDarkMode ? 'bg-slate-700 text-slate-300 border-slate-600' : 'bg-slate-50 text-slate-600 border border-slate-200')
                           }`}>
                             {task.priority || 'Medium'} Priority
                           </span>
@@ -184,22 +186,22 @@ export default function ProjectWorkspacePage() {
                           <button 
                             onClick={() => handleDeleteTask(task.id)}
                             title="Delete Task"
-                            className="text-slate-300 hover:text-rose-600 text-xs transition cursor-pointer"
+                            className="text-slate-400 hover:text-rose-500 text-xs transition cursor-pointer"
                           >
                             <i className="fa-solid fa-trash"></i>
                           </button>
                         </div>
 
                         <div>
-                          <h4 className="font-bold text-xs text-slate-900 leading-snug">{task.title}</h4>
+                          <h4 className="font-bold text-xs leading-snug">{task.title}</h4>
                           {task.description && (
-                            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{task.description}</p>
+                            <p className={`text-[11px] mt-1 leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{task.description}</p>
                           )}
                         </div>
 
                         {/* Footer Card: Assignee & Quick Status Shift */}
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500 font-medium truncate max-w-25">
+                        <div className={`pt-2 border-t flex items-center justify-between text-[11px] ${isDarkMode ? 'border-slate-700/80' : 'border-[#d8c3ad]/40'}`}>
+                          <span className={`font-medium truncate max-w-25 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
                             <i className="fa-regular fa-user mr-1"></i> {task.assignee || currentUserName}
                           </span>
 
@@ -207,7 +209,7 @@ export default function ProjectWorkspacePage() {
                           <select
                             value={task.status}
                             onChange={(e) => handleMoveStatus(task.id, e.target.value as TaskStatus)}
-                            className="bg-slate-50 border border-slate-200 text-slate-700 text-[10px] rounded px-1.5 py-1 outline-none font-semibold cursor-pointer hover:border-amber-500"
+                            className={`text-[10px] rounded px-1.5 py-1 outline-none font-semibold cursor-pointer border transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-200 hover:border-amber-500' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#221a12] hover:border-amber-500'}`}
                           >
                             <option value="Backlog">Backlog</option>
                             <option value="In Progress">In Progress</option>
@@ -229,9 +231,9 @@ export default function ProjectWorkspacePage() {
 
       {/* Modal New Task */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className={`rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+            <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
               <h3 className="font-bold text-lg">Add New Project Task 📝</h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <i className="fa-solid fa-xmark text-lg"></i>
@@ -240,35 +242,35 @@ export default function ProjectWorkspacePage() {
 
             <form onSubmit={handleCreateTask} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Task Title</label>
+                <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Task Title</label>
                 <input 
                   type="text" 
                   value={title} 
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Integrate ESP32 Wi-Fi telemetry module" 
                   required
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-amber-500"
+                  className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+                <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Description</label>
                 <textarea 
                   value={description} 
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Provide technical implementation details..." 
                   rows={3}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-amber-500"
+                  className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                 ></textarea>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Initial Status</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Initial Status</label>
                   <select 
                     value={status} 
                     onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs outline-none focus:border-amber-500"
+                    className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                   >
                     <option value="Backlog">Backlog</option>
                     <option value="In Progress">In Progress</option>
@@ -277,11 +279,11 @@ export default function ProjectWorkspacePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Priority</label>
                   <select 
                     value={priority} 
                     onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs outline-none focus:border-amber-500"
+                    className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                   >
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
@@ -289,13 +291,13 @@ export default function ProjectWorkspacePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Assignee</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Assignee</label>
                   <input 
                     type="text" 
                     value={assignee} 
                     onChange={(e) => setAssignee(e.target.value)}
                     placeholder={currentUserName} 
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-amber-500"
+                    className={`w-full rounded-xl px-3 py-2 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                   />
                 </div>
               </div>
@@ -304,13 +306,13 @@ export default function ProjectWorkspacePage() {
                 <button 
                   type="button" 
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer transition"
+                  className={`px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
-                  className="px-5 py-2 text-sm font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition shadow-sm cursor-pointer"
+                  className="px-5 py-2 text-xs font-semibold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer"
                 >
                   Create Task
                 </button>

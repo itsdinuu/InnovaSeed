@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { useTheme } from '@/context/ThemeContext'
 
 type PrototypeNote = {
   id: number | string
@@ -17,12 +18,13 @@ type PrototypeNote = {
 }
 
 export default function PrototypeNotesPage() {
+  const { isDarkMode } = useTheme()
   const [notes, setNotes] = useState<PrototypeNote[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [showExportModal, setShowExportModal] = useState(false)
   const [selectedDossier, setSelectedDossier] = useState<PrototypeNote | null>(null)
   const [currentUserName, setCurrentUserName] = useState('Desti A.')
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   // Form State for New Entry
   const [sampleId, setSampleId] = useState('SAMPLE-GEO-B5')
@@ -103,19 +105,21 @@ export default function PrototypeNotesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Prototype Notes &amp; Lab Ledger 📓</h1>
-          <p className="text-sm text-slate-500 mt-1">Digital lab notebook logged with ISO/IEC 17025 scientific rigor.</p>
+          <h1 className="text-2xl font-extrabold">Prototype Notes &amp; Lab Ledger 📓</h1>
+          <p className={`text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Digital lab notebook logged with ISO/IEC 17025 scientific rigor.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setShowExportModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 transition shadow-xs cursor-pointer"
-          >
-            <i className="fa-solid fa-file-pdf text-red-500"></i> Export ISEF Notebook
+          <button
+            onClick={() => {
+              setToastMessage("ISEF Lab Notebook PDF successfully compiled and exported!")
+              setTimeout(() => setToastMessage(null), 4000)
+            }}
+            className={`px-4 py-2 text-xs font-semibold rounded-xl transition shadow-xs flex items-center gap-2 cursor-pointer border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200 hover:bg-slate-800' : 'bg-white border-[#d8c3ad] text-[#221a12] hover:bg-[#fff1e5]'}`}>
+            <i className="fa-solid fa-file-pdf text-rose-500"></i> Export ISEF Notebook
           </button>
           <button 
             onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 transition shadow-sm cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] transition shadow-sm cursor-pointer"
           >
             <i className="fa-solid fa-plus"></i> New Entry
           </button>
@@ -125,40 +129,44 @@ export default function PrototypeNotesPage() {
       {loading ? (
         <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading lab ledger records...</div>
       ) : notes.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-3">
-          <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl grid place-items-center mx-auto text-lg">
+        <div className={`border rounded-2xl p-12 text-center shadow-xs space-y-3 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
+          <div className="w-12 h-12 bg-amber-500/10 text-amber-600 rounded-xl grid place-items-center mx-auto text-lg">
             <i className="fa-solid fa-flask"></i>
           </div>
-          <h3 className="font-bold text-slate-900">No Lab Entries Recorded Yet</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">Click &quot;New Entry&quot; above to record your prototype testing parameters.</p>
+          <h3 className="font-bold">No Lab Entries Recorded Yet</h3>
+          <p className={`text-xs max-w-sm mx-auto ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Click &quot;New Entry&quot; above to record your prototype testing parameters.</p>
         </div>
       ) : (
         <div className="grid gap-4">
           {notes.map((n) => (
-            <div key={n.id} className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm flex flex-col md:flex-row justify-between gap-4">
+            <div key={n.id} className={`border rounded-2xl p-6 shadow-xs flex flex-col md:flex-row justify-between gap-4 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
               <div className="space-y-2 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-600">{n.sample_id}</span>
-                  <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${n.status === 'Pass' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                  <span className={`text-[11px] font-mono px-2 py-0.5 rounded ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-[#fff1e5] text-[#534434]'}`}>{n.sample_id}</span>
+                  <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${n.status === 'Pass' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-600 border border-amber-500/30'}`}>
                     Mentor Signed ({n.status})
                   </span>
                 </div>
-                <h3 className="text-lg font-bold text-slate-900">{n.title}</h3>
-                <p className="text-xs text-slate-500">Logged by {n.author_name || currentUserName} • {n.date}</p>
+                <h3 className="text-lg font-bold">{n.title}</h3>
+                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Logged by {n.author_name || currentUserName} • {n.date}</p>
               </div>
 
-              <div className="flex items-center gap-4 border-t md:border-t-0 pt-4 md:pt-0 border-slate-100">
-                <div className="text-center px-3 py-1 bg-slate-50 rounded-lg border border-slate-200">
+              <div className={`flex items-center gap-4 border-t md:border-t-0 pt-4 md:pt-0 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
+                <div className={`text-center px-3 py-1 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-[#fff1e5]/60 border-[#d8c3ad]'}`}>
                   <p className="text-[10px] text-slate-400 uppercase">Peak Load</p>
-                  <b className="text-amber-600 text-sm">{n.peak}</b>
+                  <b className="text-amber-500 text-sm">{n.peak}</b>
                 </div>
-                <div className="text-center px-3 py-1 bg-slate-50 rounded-lg border border-slate-200">
+                <div className={`text-center px-3 py-1 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-[#fff1e5]/60 border-[#d8c3ad]'}`}>
                   <p className="text-[10px] text-slate-400 uppercase">Temp</p>
-                  <b className="text-slate-900 text-sm">{n.temp}</b>
+                  <b className="text-sm">{n.temp}</b>
                 </div>
                 <button 
                   onClick={() => setSelectedDossier(n)}
-                  className="inline-flex items-center justify-center px-4 py-2.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                  className={`inline-flex items-center justify-center px-4 py-2.5 text-xs font-semibold rounded-xl transition cursor-pointer shadow-sm ${
+                    isDarkMode 
+                      ? 'bg-amber-500 text-[#0F172A] hover:bg-amber-400 font-bold' 
+                      : 'bg-slate-900 text-white hover:bg-slate-800'
+                  }`}
                 >
                   View Dossier →
                 </button>
@@ -170,12 +178,12 @@ export default function PrototypeNotesPage() {
 
       {/* Modal View Dossier (Detail Telemetri & ISO/IEC 17025) */}
       {selectedDossier && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+            <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
               <div>
-                <span className="text-[10px] font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-600">{selectedDossier.sample_id}</span>
-                <h3 className="font-bold text-lg text-slate-900 mt-1">Lab Test Dossier 🔬</h3>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-[#fff1e5] text-[#534434]'}`}>{selectedDossier.sample_id}</span>
+                <h3 className="font-bold text-lg mt-1">Lab Test Dossier 🔬</h3>
               </div>
               <button onClick={() => setSelectedDossier(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <i className="fa-solid fa-xmark text-lg"></i>
@@ -185,39 +193,39 @@ export default function PrototypeNotesPage() {
             <div className="space-y-3">
               <div>
                 <h4 className="text-xs font-semibold text-slate-400 uppercase">Test Title</h4>
-                <p className="text-sm font-bold text-slate-800">{selectedDossier.title}</p>
+                <p className="text-sm font-bold">{selectedDossier.title}</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className={`grid grid-cols-2 gap-3 p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-[#fff1e5]/60 border-[#d8c3ad]'}`}>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase font-semibold">Peak Load</p>
-                  <p className="text-sm font-extrabold text-amber-600">{selectedDossier.peak}</p>
+                  <p className="text-sm font-extrabold text-amber-500">{selectedDossier.peak}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase font-semibold">Deflection</p>
-                  <p className="text-sm font-extrabold text-slate-800">{selectedDossier.load}</p>
+                  <p className="text-sm font-extrabold">{selectedDossier.load}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase font-semibold">Temperature</p>
-                  <p className="text-sm font-extrabold text-slate-800">{selectedDossier.temp}</p>
+                  <p className="text-sm font-extrabold">{selectedDossier.temp}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase font-semibold">Duration</p>
-                  <p className="text-sm font-extrabold text-slate-800">{selectedDossier.time}</p>
+                  <p className="text-sm font-extrabold">{selectedDossier.time}</p>
                 </div>
               </div>
 
-              <div className="text-xs text-slate-500 space-y-1">
-                <p><strong className="text-slate-700">Logged by:</strong> {selectedDossier.author_name || 'Innovator'}</p>
-                <p><strong className="text-slate-700">Timestamp:</strong> {selectedDossier.date}</p>
-                <p><strong className="text-slate-700">Verification Status:</strong> <span className="text-emerald-600 font-bold">Mentor Signed ({selectedDossier.status})</span></p>
+              <div className={`text-xs space-y-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+                <p><strong className={isDarkMode ? 'text-slate-200' : 'text-slate-700'}>Logged by:</strong> {selectedDossier.author_name || 'Innovator'}</p>
+                <p><strong className={isDarkMode ? 'text-slate-200' : 'text-slate-700'}>Timestamp:</strong> {selectedDossier.date}</p>
+                <p><strong className={isDarkMode ? 'text-slate-200' : 'text-slate-700'}>Verification Status:</strong> <span className="text-emerald-600 font-bold">Mentor Signed ({selectedDossier.status})</span></p>
               </div>
             </div>
 
             <div className="flex justify-end pt-2">
               <button 
                 onClick={() => setSelectedDossier(null)}
-                className="px-5 py-2 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 cursor-pointer"
+                className="px-5 py-2 text-xs font-semibold bg-slate-900 text-white rounded-xl hover:bg-slate-800 cursor-pointer shadow-sm"
               >
                 Close Dossier
               </button>
@@ -226,54 +234,12 @@ export default function PrototypeNotesPage() {
         </div>
       )}
 
-      {/* Modal Export ISEF Notebook */}
-      {showExportModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-lg text-slate-900">Export ISEF Lab Package 📄</h3>
-              <button onClick={() => setShowExportModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <i className="fa-solid fa-xmark text-lg"></i>
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Compile all prototype test logs and telemetry telemetry data into an official PDF document formatted for international science fairs (ISEF standards).
-            </p>
-
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 space-y-1">
-              <p className="font-bold"><i className="fa-solid fa-circle-info mr-1"></i> Package Summary:</p>
-              <p>• Total Recorded Samples: {notes.length} items</p>
-              <p>• Compliance: ISO/IEC 17025 Rigor Guidelines</p>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button 
-                onClick={() => setShowExportModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => {
-                  alert('ISEF Notebook PDF successfully generated and downloaded!')
-                  setShowExportModal(false)
-                }}
-                className="px-5 py-2 text-xs font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 shadow-sm cursor-pointer"
-              >
-                Download PDF
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal New Entry */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-lg text-slate-900">New Lab Ledger Entry 🧪</h3>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className={`rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+            <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
+              <h3 className="font-bold text-lg">New Lab Ledger Entry 🧪</h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <i className="fa-solid fa-xmark text-lg"></i>
               </button>
@@ -282,21 +248,21 @@ export default function PrototypeNotesPage() {
             <form onSubmit={handleCreateEntry} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Sample ID</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Sample ID</label>
                   <input 
                     type="text" 
                     value={sampleId} 
                     onChange={(e) => setSampleId(e.target.value)}
                     required
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-amber-500 font-mono"
+                    className={`w-full rounded-xl px-3 py-2 text-xs outline-none font-mono transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Status</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Status</label>
                   <select 
                     value={status} 
                     onChange={(e) => setStatus(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-amber-500"
+                    className={`w-full rounded-xl px-3 py-2 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                   >
                     <option value="Pass">Pass</option>
                     <option value="Review">Review</option>
@@ -305,45 +271,58 @@ export default function PrototypeNotesPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Test Title / Description</label>
+                <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Test Title / Description</label>
                 <input 
                   type="text" 
                   value={title} 
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Compressive strength test - sample B5" 
                   required
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-amber-500"
+                  className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                 />
               </div>
 
               <div className="grid grid-cols-4 gap-2">
                 <div>
-                  <label className="block text-[10px] font-semibold text-slate-700 mb-1">Peak Load</label>
-                  <input type="text" value={peak} onChange={(e) => setPeak(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs outline-none focus:border-amber-500" />
+                  <label className={`block text-[10px] font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Peak Load</label>
+                  <input type="text" value={peak} onChange={(e) => setPeak(e.target.value)} className={`w-full rounded-xl px-2 py-2 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`} />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-semibold text-slate-700 mb-1">Deflection</label>
-                  <input type="text" value={load} onChange={(e) => setLoad(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs outline-none focus:border-amber-500" />
+                  <label className={`block text-[10px] font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Deflection</label>
+                  <input type="text" value={load} onChange={(e) => setLoad(e.target.value)} className={`w-full rounded-xl px-2 py-2 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`} />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-semibold text-slate-700 mb-1">Temp</label>
-                  <input type="text" value={temp} onChange={(e) => setTemp(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs outline-none focus:border-amber-500" />
+                  <label className={`block text-[10px] font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Temp</label>
+                  <input type="text" value={temp} onChange={(e) => setTemp(e.target.value)} className={`w-full rounded-xl px-2 py-2 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`} />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-semibold text-slate-700 mb-1">Duration</label>
-                  <input type="text" value={time} onChange={(e) => setTime(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs outline-none focus:border-amber-500" />
+                  <label className={`block text-[10px] font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Duration</label>
+                  <input type="text" value={time} onChange={(e) => setTime(e.target.value)} className={`w-full rounded-xl px-2 py-2 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`} />
                 </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer">
+                <button type="button" onClick={() => setShowModal(false)} className={`px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}>
                   Cancel
                 </button>
-                <button type="submit" className="px-5 py-2 text-sm font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 shadow-sm cursor-pointer">
+                <button type="submit" className="px-5 py-2 text-xs font-semibold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] shadow-sm cursor-pointer">
                   Save Entry
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      
+      {/* Toast Notification Modern */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs">
+          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
+            <i className="fa-solid fa-check"></i>
+          </span>
+          <div>
+            <b className="block text-slate-200">Success</b>
+            <p className="text-slate-400">{toastMessage}</p>
           </div>
         </div>
       )}

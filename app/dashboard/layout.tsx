@@ -1,24 +1,27 @@
-"Author: Desti Andhini"
 "use client"
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { ThemeProvider, useTheme } from '@/context/ThemeContext'
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
   const [userName, setUserName] = useState('Desti A.')
   const [teamName, setTeamName] = useState('Team GeoPoly')
   const [unreadCount, setUnreadCount] = useState(0)
-  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  // Ambil state dan fungsi toggle dari ThemeContext global
+  const { isDarkMode, toggleDarkMode } = useTheme()
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setMounted(true)
+    }, 0)
+
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user?.user_metadata) {
@@ -38,6 +41,10 @@ export default function DashboardLayout({
     }
 
     getDashboardData()
+
+    return () => {
+      window.clearTimeout(timer)
+    }
   }, [])
 
   const handleSignOut = async () => {
@@ -45,18 +52,16 @@ export default function DashboardLayout({
     router.push('/login')
   }
 
+  // Mencegah mismatch render server & client saat awal memuat halaman
+  if (!mounted) {
+    return null
+  }
+
   return (
     <div className={`flex min-h-screen transition-colors duration-200 ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#fff8f4] text-[#221a12]'}`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      {/* Import Google Fonts Plus Jakarta Sans & Inter */}
       <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-        
-        body, button, input, select, textarea {
-          font-family: 'Plus Jakarta Sans', sans-serif;
-        }
-        .font-inter {
-          font-family: 'Inter', sans-serif;
-        }
+        body, button, input, select, textarea { font-family: 'Plus Jakarta Sans', sans-serif; }
       `}</style>
 
       {/* Sidebar Global */}
@@ -88,6 +93,9 @@ export default function DashboardLayout({
           </Link>
           <Link href="/dashboard/notes" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/notes') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
             <i className="fa-solid fa-pen-to-square w-4 text-center"></i>Prototype Notes
+          </Link>
+          <Link href="/dashboard/competition-prep" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/competition-prep') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+            <i className="fa-solid fa-clipboard-check w-4 text-center"></i>Competition Prep
           </Link>
           <Link href="/dashboard/mentor-feedback" className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/mentor-feedback') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
             <div className="flex items-center gap-3">
@@ -126,37 +134,32 @@ export default function DashboardLayout({
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Main Content Header */}
         <header className={`flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3.5 sticky top-0 z-10 transition-colors ${isDarkMode ? 'bg-slate-900/90 border-slate-800 backdrop-blur-md' : 'bg-white/90 border-[#d8c3ad] backdrop-blur-md'}`}>
-          
-          {/* 1. Search Bar */}
-          <div className="relative flex-1 min-w-[220px] max-w-sm">
+          <div className="relative flex-1 min-w-55 max-w-sm">
             <i className="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
             <input 
               className={`w-full rounded-xl pl-9 pr-12 py-2 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-[#F59E0B]' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-[#F59E0B]'}`} 
               placeholder="Search ideas, prototype logs, guidelines..." 
             />
-            <kbd className={`absolute right-2.5 top-2 text-[9px] border rounded px-1.5 py-0.5 font-inter ${isDarkMode ? 'border-slate-700 text-slate-400 bg-slate-900' : 'border-[#d8c3ad] text-[#534434] bg-white'}`}>⌘K</kbd>
+            <kbd className={`absolute right-2.5 top-2 text-[9px] border rounded px-1.5 py-0.5 ${isDarkMode ? 'border-slate-700 text-slate-400 bg-slate-900' : 'border-[#d8c3ad] text-[#534434] bg-white'}`}>⌘K</kbd>
           </div>
 
-          {/* 2. Nama Tim / Track Dropdown */}
           <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-[#FEF3C7] border-[#F59E0B]/30 text-[#613b00]'}`}>
             <span className="w-5 h-5 rounded-md bg-[#F59E0B] text-white grid place-items-center text-[10px]">
               <i className="fa-solid fa-star"></i>
             </span>
-            <span className="truncate max-w-[240px]">{teamName} • National Science Fair Track</span>
+            <span className="truncate max-w-60">{teamName} • National Science Fair Track</span>
             <i className="fa-solid fa-chevron-down text-[10px] opacity-60 ml-1"></i>
           </div>
 
-          {/* 3. Kanan Header: Sprint Active, Notifikasi, & Tombol Switch Mode */}
           <div className="flex items-center gap-2.5 ml-auto">
-            {/* Sprint Active Badge */}
             <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold bg-[#FEF3C7] border border-[#F59E0B]/30 text-[#613b00] shadow-2xs">
               <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse"></span>
               Sprint Active
             </span>
 
-            {/* Tombol Switch Mode */}
+            {/* Tombol Switch Mode Global */}
             <button 
-              onClick={() => setIsDarkMode(!isDarkMode)}
+              onClick={toggleDarkMode}
               title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
               className={`p-2 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${isDarkMode ? 'bg-slate-800 border-slate-700 text-amber-400 hover:bg-slate-700' : 'bg-white border-[#d8c3ad] text-[#221a12] hover:bg-[#fff1e5]'}`}
             >
@@ -164,7 +167,6 @@ export default function DashboardLayout({
               <span className="hidden xl:inline text-[11px]">{isDarkMode ? 'Light' : 'Dark'}</span>
             </button>
 
-            {/* Tombol Notifikasi */}
             <button 
               onClick={() => alert('Live notification panel checked.')}
               className={`relative p-2 rounded-xl border transition cursor-pointer shadow-2xs ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-[#d8c3ad] text-[#534434] hover:bg-[#fff1e5]'}`}
@@ -172,13 +174,12 @@ export default function DashboardLayout({
             >
               <i className="fa-regular fa-bell text-sm"></i>
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold grid place-items-center animate-pulse font-inter">
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold grid place-items-center animate-pulse">
                   {unreadCount}
                 </span>
               )}
             </button>
           </div>
-
         </header>
 
         <main className="p-6 lg:p-8 max-w-275 flex-1">
@@ -186,5 +187,13 @@ export default function DashboardLayout({
         </main>
       </div>
     </div>
+  )
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <ThemeProvider>
+      <DashboardContent>{children}</DashboardContent>
+    </ThemeProvider>
   )
 }
