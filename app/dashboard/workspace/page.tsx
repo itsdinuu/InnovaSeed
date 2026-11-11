@@ -7,7 +7,7 @@ type TaskStatus = 'Backlog' | 'In Progress' | 'Under Review' | 'Completed'
 type TaskPriority = 'Low' | 'Medium' | 'High'
 
 type Task = {
-  id: number
+  id: number | string
   title: string
   description?: string
   status: TaskStatus
@@ -19,8 +19,9 @@ export default function ProjectWorkspacePage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [currentUserName, setCurrentUserName] = useState('Desti A.')
 
-  // Form state untuk tugas baru
+  // Form state for new task
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<TaskStatus>('Backlog')
@@ -30,15 +31,25 @@ export default function ProjectWorkspacePage() {
   useEffect(() => {
     async function fetchTasks() {
       setLoading(true)
+
+      // Get active user from Supabase session
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        const name = session.user.user_metadata?.full_name || session.user.user_metadata?.lead_name || session.user.email?.split('@')[0] || 'Desti A.'
+        setCurrentUserName(name)
+        if (!assignee) setAssignee(name)
+      }
+
+      // Fetch real data from Supabase database
       const { data, error } = await supabase
         .from('project_tasks')
         .select('*')
         .order('id', { ascending: false })
 
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         setTasks(data)
       } else {
-        // Fallback data demo jika tabel belum dibuat di Supabase
+        // Fallback demo data if the table hasn't been created yet
         setTasks([
           { id: 1, title: 'Sensor Calibration & Baseline Testing', description: 'Ensure ISO/IEC 17025 tolerance limits on moisture probes.', status: 'In Progress', priority: 'High', assignee: 'Desti A.' },
           { id: 2, title: 'Next.js Frontend Routing Optimization', description: 'Refactor app router layouts and clean up TypeScript warnings.', status: 'Backlog', priority: 'Medium', assignee: 'Team Lead' },
@@ -50,7 +61,7 @@ export default function ProjectWorkspacePage() {
     }
 
     fetchTasks()
-  }, [])
+  }, [assignee])
 
   async function handleCreateTask(e: React.FormEvent) {
     e.preventDefault()
@@ -61,7 +72,7 @@ export default function ProjectWorkspacePage() {
       description,
       status,
       priority,
-      assignee: assignee || 'Innovator'
+      assignee: assignee || currentUserName
     }
 
     const { data, error } = await supabase
@@ -72,7 +83,7 @@ export default function ProjectWorkspacePage() {
     if (!error && data) {
       setTasks([data[0], ...tasks])
     } else {
-      // Jika tabel database belum ada, masukkan secara lokal agar UI tetap responsif
+      // Fallback local insertion if database table is unavailable
       setTasks([{ id: Date.now(), ...newTask }, ...tasks])
     }
 
@@ -82,8 +93,8 @@ export default function ProjectWorkspacePage() {
     setAssignee('')
   }
 
-  // Fungsi untuk mengubah status tugas langsung dari kartu (Kanban flow)
-  async function handleMoveStatus(taskId: number, newStatus: 'Backlog' | 'In Progress' | 'Under Review' | 'Completed') {
+  // Function to move task status directly from the card (Kanban flow)
+  async function handleMoveStatus(taskId: number | string, newStatus: TaskStatus) {
     setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t))
     
     await supabase
@@ -92,7 +103,7 @@ export default function ProjectWorkspacePage() {
       .eq('id', taskId)
   }
 
-  async function handleDeleteTask(taskId: number) {
+  async function handleDeleteTask(taskId: number | string) {
     if (!confirm('Are you sure you want to delete this task?')) return
 
     setTasks(tasks.filter(t => t.id !== taskId))
@@ -102,14 +113,14 @@ export default function ProjectWorkspacePage() {
       .eq('id', taskId)
   }
 
-  const columns: ('Backlog' | 'In Progress' | 'Under Review' | 'Completed')[] = [
+  const columns: TaskStatus[] = [
     'Backlog', 'In Progress', 'Under Review', 'Completed'
   ]
 
   return (
     <div className="space-y-6">
       
-      {/* Header & Tombol Tambah Tugas */}
+      {/* Header & Add Task Button */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">Project Workspace Kanban 📋</h1>
@@ -118,7 +129,7 @@ export default function ProjectWorkspacePage() {
 
         <button 
           onClick={() => setShowModal(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold bg-amber-500 text-white hover:bg-amber-600 transition shadow-sm"
+          className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold bg-amber-500 text-white hover:bg-amber-600 transition shadow-sm cursor-pointer"
         >
           <i className="fa-solid fa-plus"></i> Add New Task
         </button>
@@ -126,7 +137,7 @@ export default function ProjectWorkspacePage() {
 
       {/* Kanban Board Grid */}
       {loading ? (
-        <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading workspace tasks...</div>
+        <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading workspace tasks from database...</div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
           {columns.map((colStatus) => {
@@ -173,7 +184,7 @@ export default function ProjectWorkspacePage() {
                           <button 
                             onClick={() => handleDeleteTask(task.id)}
                             title="Delete Task"
-                            className="text-slate-300 hover:text-rose-600 text-xs transition"
+                            className="text-slate-300 hover:text-rose-600 text-xs transition cursor-pointer"
                           >
                             <i className="fa-solid fa-trash"></i>
                           </button>
@@ -189,10 +200,10 @@ export default function ProjectWorkspacePage() {
                         {/* Footer Card: Assignee & Quick Status Shift */}
                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                           <span className="text-slate-500 font-medium truncate max-w-25">
-                            <i className="fa-regular fa-user mr-1"></i> {task.assignee || 'Innovator'}
+                            <i className="fa-regular fa-user mr-1"></i> {task.assignee || currentUserName}
                           </span>
 
-                          {/* Dropdown kecil untuk memindahkan status antar kolom */}
+                          {/* Dropdown to move task between columns */}
                           <select
                             value={task.status}
                             onChange={(e) => handleMoveStatus(task.id, e.target.value as TaskStatus)}
@@ -216,13 +227,13 @@ export default function ProjectWorkspacePage() {
         </div>
       )}
 
-      {/* Modal Tambah Tugas Baru */}
+      {/* Modal New Task */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="font-bold text-lg">Add New Project Task 📝</h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <i className="fa-solid fa-xmark text-lg"></i>
               </button>
             </div>
@@ -283,7 +294,7 @@ export default function ProjectWorkspacePage() {
                     type="text" 
                     value={assignee} 
                     onChange={(e) => setAssignee(e.target.value)}
-                    placeholder="Desti A." 
+                    placeholder={currentUserName} 
                     className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-amber-500"
                   />
                 </div>
@@ -293,13 +304,13 @@ export default function ProjectWorkspacePage() {
                 <button 
                   type="button" 
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer transition"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
-                  className="px-5 py-2 text-sm font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition shadow-sm"
+                  className="px-5 py-2 text-sm font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition shadow-sm cursor-pointer"
                 >
                   Create Task
                 </button>
