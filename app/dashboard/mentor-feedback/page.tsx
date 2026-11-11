@@ -10,6 +10,7 @@ type Feedback = {
   feedback_text: string
   category: string
   status: 'Needs Revision' | 'Approved' | 'In Progress'
+  is_read?: boolean
   created_at?: string
 }
 
@@ -28,68 +29,51 @@ export default function MentorFeedbackPage() {
   const [showNotificationPanel, setShowNotificationPanel] = useState(false)
 
   useEffect(() => {
-    async function fetchData() {
+    async function fetchRealData() {
       setLoading(true)
 
-      // Fetch Mentor Feedback dari Supabase
-      const { data: fbData } = await supabase
+      // Ambil data Mentor Feedback MURNI dari database Supabase
+      const { data: fbData, error: fbError } = await supabase
         .from('mentor_feedback')
         .select('*')
         .order('id', { ascending: false })
 
-      if (fbData && fbData.length > 0) {
+      if (!fbError && fbData) {
         setFeedbacks(fbData)
-      } else {
-        // Fallback demo data
-        setFeedbacks([
-          { 
-            id: 1, 
-            mentor_name: 'Dr. Ir. Budi Santoso, M.Sc.', 
-            mentor_role: 'Senior Materials Engineering Mentor', 
-            feedback_text: 'Ensure compressive strength testing logs for Eco-Bricks Gen 3 strictly follow ISO/IEC 17025 calibration cycles before submission.', 
-            category: 'Testing Rigor', 
-            status: 'Needs Revision' 
-          },
-          { 
-            id: 2, 
-            mentor_name: 'Sarah Jenkins, Ph.D.', 
-            mentor_role: 'Innovation Competition Coach', 
-            feedback_text: 'The English documentation in the LMS portal looks solid. Focus next on the 3-minute pitch deck narrative.', 
-            category: 'Pitch Strategy', 
-            status: 'Approved' 
-          }
-        ])
       }
 
-      // Fetch Notifications dari Supabase
-      const { data: notifData } = await supabase
+      // Ambil data Notifikasi MURNI dari database Supabase
+      const { data: notifData, error: notifError } = await supabase
         .from('notifications')
         .select('*')
         .order('id', { ascending: false })
 
-      if (notifData && notifData.length > 0) {
+      if (!notifError && notifData) {
         setNotifications(notifData)
-      } else {
-        // Fallback demo notifications
-        setNotifications([
-          { id: 1, title: 'New Mentor Review', message: 'Dr. Budi left feedback on your prototype telemetry logs.', is_read: false },
-          { id: 2, title: 'Submission Deadline', message: 'InnovaSeed Phase 2 milestone review in 48 hours.', is_read: false },
-          { id: 3, title: 'System Update', message: 'Supabase RLS policies successfully updated.', is_read: true }
-        ])
       }
 
       setLoading(false)
     }
 
-    fetchData()
+    fetchRealData()
   }, [])
 
-  // Fungsi saat notifikasi diklik: ubah is_read jadi true (hilang dari unread badge/list aktif)
+  // Fungsi real-time saat notifikasi diklik: ubah is_read jadi true di database dan update state
   async function handleNotificationClick(id: number | string) {
     setNotifications(notifications.map(n => n.id === id ? { ...n, is_read: true } : n))
 
     await supabase
       .from('notifications')
+      .update({ is_read: true })
+      .eq('id', id)
+  }
+
+  // Fungsi real-time saat feedback diklik/diakui: ubah is_read jadi true di database
+  async function handleFeedbackRead(id: number | string) {
+    setFeedbacks(feedbacks.map(f => f.id === id ? { ...f, is_read: true } : f))
+
+    await supabase
+      .from('mentor_feedback')
       .update({ is_read: true })
       .eq('id', id)
   }
@@ -103,10 +87,10 @@ export default function MentorFeedbackPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">Mentor Feedback &amp; Review 💬</h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">Review evaluations from faculty advisors and track real-time alerts.</p>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">Review real evaluations from faculty advisors and track real-time alerts.</p>
         </div>
 
-        {/* Tombol Loneng Notifikasi Live */}
+        {/* Tombol Lonceng Notifikasi Live */}
         <div className="relative">
           <button 
             onClick={() => setShowNotificationPanel(!showNotificationPanel)}
@@ -131,7 +115,7 @@ export default function MentorFeedbackPage() {
 
               <div className="space-y-2 max-h-72 overflow-y-auto">
                 {notifications.length === 0 ? (
-                  <p className="text-center text-xs text-slate-400 py-4">No notifications available</p>
+                  <p className="text-center text-xs text-slate-400 py-4">No notifications in database</p>
                 ) : (
                   notifications.map((notif) => (
                     <div 
@@ -158,20 +142,42 @@ export default function MentorFeedbackPage() {
         </div>
       </div>
 
-      {/* Daftar Feedback Mentor */}
+      {/* Daftar Feedback Mentor dari Database */}
       {loading ? (
-        <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading mentor evaluations...</div>
+        <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading real mentor evaluations from Supabase...</div>
+      ) : feedbacks.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-3">
+          <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl grid place-items-center mx-auto text-lg">
+            <i className="fa-solid fa-comments"></i>
+          </div>
+          <h3 className="font-bold text-slate-900">No Mentor Feedback Recorded</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Your Supabase table <code className="bg-slate-100 px-1 py-0.5 rounded font-mono">mentor_feedback</code> is currently empty. Add entries via Supabase to display them here.
+          </p>
+        </div>
       ) : (
         <div className="grid gap-4">
           {feedbacks.map((fb) => (
-            <div key={fb.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+            <div 
+              key={fb.id} 
+              className={`bg-white border rounded-2xl p-6 shadow-xs space-y-4 transition ${
+                fb.is_read ? 'border-slate-200' : 'border-amber-300 ring-2 ring-amber-400/20 bg-amber-50/10'
+              }`}
+            >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 font-bold grid place-items-center text-sm">
                     {fb.mentor_name.charAt(0)}
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-slate-900">{fb.mentor_name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-sm text-slate-900">{fb.mentor_name}</h3>
+                      {!fb.is_read && (
+                        <span className="text-[9px] font-extrabold bg-amber-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                          New
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-500">{fb.mentor_role}</p>
                   </div>
                 </div>
@@ -201,10 +207,10 @@ export default function MentorFeedbackPage() {
                   Reply to Mentor
                 </button>
                 <button 
-                  onClick={() => alert('Feedback status updated successfully.')}
+                  onClick={() => handleFeedbackRead(fb.id)}
                   className="px-4 py-2 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 cursor-pointer transition"
                 >
-                  Acknowledge Feedback
+                  {fb.is_read ? 'Acknowledged' : 'Acknowledge Feedback'}
                 </button>
               </div>
             </div>
