@@ -4,14 +4,13 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 type Idea = {
-  id?: number
+  id: number
   title?: string
   description?: string
   status?: string
-  tags?: string[] | string
-  author_id?: string | null
+  tags?: string[] | string | null
+  feasibility_score?: number | string | null
   votes?: number
-  feasibility_score?: number | string
 }
 
 export default function IdeaBankPage() {
@@ -19,6 +18,10 @@ export default function IdeaBankPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   
+  // State untuk mode Edit (menyimpan ID ide yang sedang diedit)
+  const [editingId, setEditingId] = useState<number | null>(null)
+
+  // Form state
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState('Raw Concept')
@@ -29,7 +32,6 @@ export default function IdeaBankPage() {
     fetchIdeas()
   }, [])
 
-  // 1. Ambil data langsung dari tabel ideas secara bersih tanpa relasi rumit
   async function fetchIdeas() {
     setLoading(true)
     const { data } = await supabase
@@ -43,37 +45,94 @@ export default function IdeaBankPage() {
     setLoading(false)
   }
 
-  async function handleCreateIdea(e: React.FormEvent) {
+  // Fungsi Buka Modal untuk Tambah Baru
+  function handleOpenCreateModal() {
+    setEditingId(null)
+    setTitle('')
+    setDescription('')
+    setStatus('Raw Concept')
+    setTags('')
+    setFeasibilityScore('7.5')
+    setShowModal(true)
+  }
+
+  // Fungsi Buka Modal untuk Edit Data
+  function handleOpenEditModal(item: Idea) {
+    setEditingId(item.id)
+    setTitle(item.title || '')
+    setDescription(item.description || '')
+    setStatus(item.status || 'Raw Concept')
+    setTags(Array.isArray(item.tags) ? item.tags.join(', ') : (item.tags || ''))
+    setFeasibilityScore(item.feasibility_score?.toString() || '7.5')
+    setShowModal(true)
+  }
+
+  // Fungsi Simpan (Bisa untuk Create baru atau Update data lama)
+  async function handleSaveIdea(e: React.FormEvent) {
     e.preventDefault()
     if (!title.trim()) return
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const userId = session?.user?.id || null
-
     const formattedTags = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []
+    const parsedScore = parseFloat(feasibilityScore) || 0
 
-    const { error } = await supabase.from('ideas').insert([
-      {
-        title,
-        description,
-        status,
-        tags: formattedTags,
-        author_id: userId,
-        votes: 0,
-        feasibility_score: parseFloat(feasibilityScore) || 0
+    if (editingId) {
+      // PROSES EDIT / UPDATE
+      const { error } = await supabase
+        .from('ideas')
+        .update({
+          title,
+          description,
+          status,
+          tags: formattedTags,
+          feasibility_score: parsedScore
+        })
+        .eq('id', editingId)
+
+      if (!error) {
+        setShowModal(false)
+        fetchIdeas()
+      } else {
+        alert('Failed to update idea: ' + error.message)
       }
-    ])
+    } else {
+      // PROSES CREATE BARU
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id || null
+
+      const { error } = await supabase.from('ideas').insert([
+        {
+          title,
+          description,
+          status,
+          tags: formattedTags,
+          author_id: userId,
+          votes: 0,
+          feasibility_score: parsedScore
+        }
+      ])
+
+      if (!error) {
+        setShowModal(false)
+        fetchIdeas()
+      } else {
+        alert('Failed to save idea: ' + error.message)
+      }
+    }
+  }
+
+  // Fungsi Hapus (Delete) Ide
+  async function handleDeleteIdea(id: number) {
+    if (!confirm('Are you sure you want to delete this idea?')) return
+
+    const { error } = await supabase
+      .from('ideas')
+      .delete()
+      .eq('id', id)
 
     if (!error) {
-      setTitle('')
-      setDescription('')
-      setStatus('Raw Concept')
-      setTags('')
-      setFeasibilityScore('7.5')
-      setShowModal(false)
-      fetchIdeas() // Otomatis refresh daftar ide setelah berhasil simpan
+      fetchIdeas()
     } else {
-      alert('Failed to save idea: ' + error.message)
+      alert('Failed to delete idea: ' + error.message)
     }
   }
 
@@ -85,7 +144,7 @@ export default function IdeaBankPage() {
           <p className="text-sm text-slate-500 mt-1">Capture, vote and validate concepts before they become prototypes.</p>
         </div>
         <button 
-          onClick={() => setShowModal(true)}
+          onClick={handleOpenCreateModal}
           className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 transition shadow-sm"
         >
           <i className="fa-solid fa-plus"></i> Capture New Idea
@@ -106,8 +165,27 @@ export default function IdeaBankPage() {
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
           {ideas.map((item) => (
-            <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
+            <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3 relative group">
+              
+              {/* Tombol Edit & Delete di Pojok Kanan Atas Kartu */}
+              <div className="absolute top-4 right-4 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition">
+                <button 
+                  onClick={() => handleOpenEditModal(item)}
+                  title="Edit Idea"
+                  className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-600 flex items-center justify-center text-xs transition"
+                >
+                  <i className="fa-solid fa-pen"></i>
+                </button>
+                <button 
+                  onClick={() => handleDeleteIdea(item.id)}
+                  title="Delete Idea"
+                  className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center text-xs transition"
+                >
+                  <i className="fa-solid fa-trash"></i>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pr-16">
                 <span className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-700">
                   {item.status || 'Raw Concept'}
                 </span>
@@ -137,18 +215,20 @@ export default function IdeaBankPage() {
         </div>
       )}
 
-      {/* Modal / Form Input */}
+      {/* Modal / Form Input (Digunakan untuk Tambah & Edit) */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-lg">Capture New Innovation Idea</h3>
+              <h3 className="font-bold text-lg">
+                {editingId ? 'Edit Innovation Idea ✏️' : 'Capture New Innovation Idea 💡'}
+              </h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">
                 <i className="fa-solid fa-xmark text-lg"></i>
               </button>
             </div>
 
-            <form onSubmit={handleCreateIdea} className="space-y-4">
+            <form onSubmit={handleSaveIdea} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Idea Title</label>
                 <input 
@@ -205,8 +285,7 @@ export default function IdeaBankPage() {
                 <input 
                   type="text" 
                   value={tags} 
-                  onChange={(e) => tags && setTags(e.target.value)}
-                  onChangeCapture={(e) => setTags(e.target.value)}
+                  onChange={(e) => setTags(e.target.value)}
                   placeholder="iot, agritech, materials" 
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-amber-500"
                 />
@@ -224,7 +303,7 @@ export default function IdeaBankPage() {
                   type="submit" 
                   className="px-5 py-2 text-sm font-semibold bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition shadow-sm"
                 >
-                  Save Idea
+                  {editingId ? 'Save Changes' : 'Save Idea'}
                 </button>
               </div>
             </form>

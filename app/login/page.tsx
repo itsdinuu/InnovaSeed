@@ -9,6 +9,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -24,7 +25,7 @@ export default function LoginPage() {
     setErrorMessage('')
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
@@ -41,6 +42,25 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleGoogleSSO = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}${roles[activeRole].link}`
+        }
+      })
+      if (error) throw error
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Google SSO login failed.'
+      setErrorMessage(message)
+    }
+  }
+
+  const handleSchoolSSO = () => {
+    alert('School SSO integration (SIAKAD / School Portal) is processing.')
   }
 
   return (
@@ -139,7 +159,32 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="mt-4">
+          {/* School SSO and Google Workspace Providers */}
+          <div className="mt-6 space-y-2.5">
+            <button
+              type="button"
+              onClick={handleSchoolSSO}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2.5 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs"
+            >
+              <i className="fa-solid fa-school text-amber-600"></i> Continue with School SSO (SIAKAD / School Portal)
+            </button>
+            <button
+              type="button"
+              onClick={handleGoogleSSO}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2.5 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs"
+            >
+              <i className="fa-brands fa-google text-amber-600"></i> Continue with Google Workspace for Education
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="relative flex py-4 items-center">
+            <div className="grow border-t border-slate-200"></div>
+            <span className="shrink mx-4 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Or sign in with registered credentials</span>
+            <div className="grow border-t border-slate-200"></div>
+          </div>
+
+          <form onSubmit={handleLogin}>
             <div className="flex justify-between">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">Institutional Email or Student Lead ID</label>
               <span className="text-[11px] text-slate-400">e.g., student.lead@geopoly.ac.id</span>
@@ -187,6 +232,19 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Remember Me Option */}
+            <div className="flex items-center mb-4 text-xs">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded border-slate-300 text-amber-500 focus:ring-0 w-4 h-4"
+                />
+                Remember this secure laboratory workstation for 30 days (ISO/IEC 17025 Compliant Audit Session)
+              </label>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -196,8 +254,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-xs text-slate-500 mt-5">Don
-            &apos;t have an InnovaSeed account yet?</p>
+          <p className="text-center text-xs text-slate-500 mt-5">Don&apos;t have an InnovaSeed account yet?</p>
           <div className="flex flex-wrap justify-center gap-2 mt-2 text-xs font-semibold">
             <Link href="/register" className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100">+ Register Innovation Team</Link>
           </div>
