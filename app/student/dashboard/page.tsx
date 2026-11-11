@@ -1,8 +1,30 @@
 "use client"
 
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 
 export default function DashboardPage() {
+  const [userName, setUserName] = useState('Innovator')
+  const [teamName, setTeamName] = useState('Innovation Team')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function getUserData() {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (session?.user) {
+        const metadata = session.user.user_metadata
+        // Mengambil data dari metadata saat user melakukan register
+        if (metadata?.lead_name) setUserName(metadata.lead_name)
+        if (metadata?.team_name) setTeamName(metadata.team_name)
+      }
+      setLoading(false)
+    }
+
+    getUserData()
+  }, [])
+
   const stats = [
     { label: 'Active Prototype', value: 'Eco-Bricks Gen 3', desc: 'Status: In Lab Testing' },
     { label: 'Milestone Completion', value: '60%', desc: '(3/5 Complete)', progress: 60 },
@@ -46,7 +68,7 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="flex min-h-screen bg-amber-50/20 font-sans text-slate-900">
+    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
       {/* Sidebar */}
       <aside className="hidden lg:flex flex-col w-57 shrink-0 bg-white border-r border-slate-200 p-4 sticky top-0 h-screen">
         <div className="flex items-center gap-3 mb-5">
@@ -80,36 +102,16 @@ export default function DashboardPage() {
             <i className="fa-solid fa-comments w-4 text-center"></i>Mentor Feedback
             <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">1 New</span>
           </Link>
-          <Link href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50">
-            <i className="fa-solid fa-trophy w-4 text-center"></i>Competition Prep
-          </Link>
-          <Link href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50">
-            <i className="fa-solid fa-id-badge w-4 text-center"></i>Portfolio
-          </Link>
         </nav>
 
-        <div className="mt-auto">
-          <div className="border border-slate-200 rounded-xl p-3 text-xs mb-4">
-            <div className="flex justify-between font-semibold text-slate-600">
-              <span><i className="fa-solid fa-cloud mr-1 text-slate-400"></i>Lab Storage</span>
-              <span>3.8 / 5 GB</span>
-            </div>
-            <div className="h-1.5 bg-slate-200 rounded-full my-2">
-              <div className="h-full w-[76%] bg-amber-500 rounded-full"></div>
-            </div>
-            <div className="flex justify-between text-slate-500">
-              <span><i className="fa-solid fa-circle text-green-500 text-[6px] align-middle"></i> System Synced</span>
-              <Link href="#" className="text-amber-800 font-semibold">Details</Link>
-            </div>
-          </div>
-          <Link href="#" className="flex items-center gap-3 px-3 py-2 text-sm text-slate-600">
-            <i className="fa-solid fa-gear w-4"></i>Settings
-          </Link>
-          <div className="flex items-center gap-3 border-t border-slate-200 pt-4 mt-2">
-            <span className="w-10 h-10 rounded-full bg-linear-to-br from-amber-200 to-slate-400 inline-flex items-center justify-center text-xs font-bold text-white shrink-0 ring-2 ring-white">NK</span>
+        <div className="mt-auto pt-4 border-t border-slate-200">
+          <div className="flex items-center gap-3">
+            <span className="w-9 h-9 rounded-full bg-amber-100 text-amber-800 text-xs font-bold grid place-items-center">
+              {userName.substring(0, 2).toUpperCase()}
+            </span>
             <div className="text-sm leading-tight">
-              <b>Nadia Kusuma</b>
-              <p className="text-xs text-slate-500">Team GeoPoly • Lead</p>
+              <b>{loading ? 'Loading...' : userName}</b>
+              <p className="text-xs text-slate-500">{teamName} • Lead</p>
             </div>
           </div>
         </div>
@@ -125,7 +127,7 @@ export default function DashboardPage() {
             <kbd className="absolute right-3 top-2.5 text-[10px] text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">⌘K</kbd>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 sm:inline-flex">
+            <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50">
               Eco-Friendly Plastic Bricks • Sprint 4 <i className="fa-solid fa-chevron-down text-xs"></i>
             </button>
             <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50">
@@ -134,10 +136,6 @@ export default function DashboardPage() {
             <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50">
               <i className="fa-regular fa-calendar-check"></i> Log Sprint
             </button>
-            <button className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50">
-              <i className="fa-regular fa-bell"></i>
-            </button>
-            <span className="w-9 h-9 rounded-full bg-amber-100 text-amber-800 text-xs font-bold grid place-items-center">NK</span>
           </div>
         </header>
 
@@ -145,10 +143,15 @@ export default function DashboardPage() {
         <main className="p-6 lg:p-8 max-w-275">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold">Welcome back, Nadia 👋 <span className="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold bg-amber-100 text-amber-800 align-middle">Accelerated Track</span></h1>
+              <h1 className="text-2xl font-bold">
+                Welcome back, {loading ? '...' : userName} 👋{' '}
+                <span className="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold bg-amber-100 text-amber-800 align-middle">
+                  Accelerated Track
+                </span>
+              </h1>
               <p className="text-sm text-slate-500 mt-1">Sprint 4: Validation &amp; Pre-Competition Benchmarking • Next mentor review in 3 days</p>
             </div>
-            <span className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50">
+            <span className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-white border border-slate-200 text-slate-900">
               <i className="fa-regular fa-calendar text-amber-500"></i> National Finals March 14, 2025
             </span>
           </div>
@@ -156,7 +159,7 @@ export default function DashboardPage() {
           {/* Stats Grid */}
           <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
             {stats.map((s, i) => (
-              <div key={i} className="bg-white border border-slate-200 rounded-xl p-5">
+              <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
                 <p className="text-xs text-slate-500 mb-2">{s.label}</p>
                 {s.label === 'Milestone Completion' ? (
                   <>
@@ -165,15 +168,13 @@ export default function DashboardPage() {
                       <div className="h-full w-[60%] bg-amber-500 rounded-full"></div>
                     </div>
                   </>
-                ) : s.label === 'Mentor Rating' ? (
-                  <b className="text-3xl">4.9 <span className="text-slate-400 text-sm">/ 5.0</span></b>
                 ) : s.label === 'Readiness Index' ? (
                   <div className="flex items-center gap-2">
                     <b className="text-3xl">{s.value}</b>
                     <span className="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold bg-green-100 text-green-700">{s.tag}</span>
                   </div>
                 ) : (
-                  <b className="text-xl">{s.value}</b>
+                  <b className="text-2xl">{s.value}</b>
                 )}
                 <p className="text-xs text-slate-500 mt-1">{s.desc}</p>
               </div>
@@ -183,10 +184,10 @@ export default function DashboardPage() {
           {/* Main Grid Content */}
           <div className="grid xl:grid-cols-[1fr_330px] gap-5 mt-5">
             <div className="space-y-5">
-              <section className="bg-white border border-slate-200 rounded-xl p-6">
+              <section className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
                 <div className="flex justify-between text-xs">
                   <span className="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold bg-amber-50 border border-amber-200 text-amber-700">In Progress (Milestone 3/5)</span>
-                  <span className="text-slate-400">Updated 4h ago by Team GeoPoly</span>
+                  <span className="text-slate-400">Updated 4h ago by {teamName}</span>
                 </div>
                 <h2 className="text-xl font-bold mt-4">Eco-Friendly Plastic Bricks</h2>
                 <p className="text-sm text-slate-500">Compression-Molded Recycled HDPE Composite for Modular Urban Pavers</p>
@@ -227,7 +228,7 @@ export default function DashboardPage() {
                 </div>
               </section>
 
-              <section className="bg-white border border-slate-200 rounded-xl p-6">
+              <section className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
                 <div className="flex justify-between">
                   <h3 className="font-bold"><i className="fa-regular fa-comments text-amber-500 mr-2"></i>Mentor Feedback &amp; Updates</h3>
                   <span className="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold bg-amber-500 text-white">1 Unread</span>
@@ -242,18 +243,15 @@ export default function DashboardPage() {
                       </div>
                       <span className="text-xs text-slate-400">2 hours ago</span>
                     </div>
-                    <p className="inline-block rounded-md px-2 py-0.5 text-[11px] bg-slate-100 text-slate-500 mt-2">
+                    <p className="inline-block rounded-md px-2 py-0.5 text-[11px] bg-slate-100 text-slate-500 font-normal mt-2">
                       Ref: Eco-Friendly Plastic Bricks • Milestone 3 Data Log
                     </p>
                     <blockquote className="border-l-4 border-amber-500 bg-amber-50/50 italic text-sm text-slate-600 px-4 py-3 mt-3">
                       &ldquo;Excellent compressive test readings on sample #B4. Ensure you document moisture absorption variance before Tuesday&apos;s rehearsal. Bring the tensile strain curves as well.&rdquo;
                     </blockquote>
                     <div className="flex flex-wrap gap-2 mt-3">
-                      <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 font-semibold transition bg-amber-500 text-white hover:bg-amber-600 py-1.5! text-xs!">Review Feedback</button>
-                      <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 py-1.5! text-xs!">Reply to Mentor</button>
-                      <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 py-1.5! text-xs!">
-                        <i className="fa-regular fa-calendar mr-1"></i> Schedule 1-on-1 Office Hour
-                      </button>
+                      <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 py-1.5!">Review Feedback</button>
+                      <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 py-1.5!">Reply to Mentor</button>
                     </div>
                   </div>
                 </div>
@@ -261,10 +259,10 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-5">
-              <section className="rounded-xl p-6 text-white bg-linear-to-br from-stone-900 to-amber-950">
-                <div className="flex justify-between text-[11px] font-bold text-amber-500">
+              <section className="rounded-xl p-6 text-white bg-linear-to-br from-stone-900 to-amber-950 shadow-sm">
+                <div className="flex justify-between text-[11px] font-bold text-amber-400">
                   <span><i className="fa-solid fa-trophy mr-1"></i> TARGET COMPETITION</span>
-                  <span className="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold border border-amber-500 text-amber-500">National</span>
+                  <span className="inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold border border-amber-400 text-amber-400">National</span>
                 </div>
                 <h3 className="text-xl font-bold mt-3">National Science Fair 2025</h3>
                 <p className="text-xs text-slate-400">Environmental Engineering &amp; Applied Sciences</p>
@@ -281,13 +279,13 @@ export default function DashboardPage() {
 
                 <div className="flex justify-between text-xs font-semibold mt-5">
                   <span>Submission Requirements</span>
-                  <span className="text-amber-500">4 / 6 Complete</span>
+                  <span className="text-amber-400">4 / 6 Complete</span>
                 </div>
 
                 <ul className="mt-3 space-y-2 text-xs text-slate-200">
                   {reqs.map((r, i) => (
                     <li key={i} className="flex gap-2 items-center">
-                      <i className={r.done ? "fa-solid fa-circle-check text-amber-500" : "fa-regular fa-circle text-slate-500"}></i>
+                      <i className={r.done ? "fa-solid fa-circle-check text-amber-400" : "fa-regular fa-circle text-slate-500"}></i>
                       {r.text}
                     </li>
                   ))}
@@ -298,7 +296,7 @@ export default function DashboardPage() {
                 </Link>
               </section>
 
-              <section className="bg-white border border-slate-200 rounded-xl p-5">
+              <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
                 <h3 className="font-bold">Upcoming Deadlines <i className="fa-regular fa-clock text-amber-500 text-sm ml-1"></i></h3>
                 <div className="mt-3 space-y-3">
                   {deadlines.map((d, i) => (
@@ -314,27 +312,26 @@ export default function DashboardPage() {
                     </div>
                   ))}
                 </div>
-                <Link href="#" className="text-xs font-semibold text-amber-800 mt-4 inline-block hover:underline">View Full Academic Calendar →</Link>
               </section>
             </div>
           </div>
 
-          <section className="bg-white border border-slate-200 rounded-xl p-6 mt-5">
+          <section className="bg-white border border-slate-200 rounded-xl p-6 mt-5 shadow-sm">
             <h3 className="font-bold">Quick Lab Logger <i className="fa-solid fa-flask text-amber-500 ml-1"></i></h3>
             <div className="grid md:grid-cols-[1fr_1fr_1.3fr_auto] gap-3 items-end mt-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">Batch Sample ID</label>
-                <input className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20" defaultValue="SAMPLE-GEO-B5" />
+                <input className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500" defaultValue="SAMPLE-GEO-B5" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">Observed Tensile Modulus (GPa)</label>
-                <input className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20" placeholder="e.g. 3.42" />
+                <input className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500" placeholder="e.g. 3.42" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">Brief Experimental Note</label>
-                <input className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20" placeholder="Record pressure, holding duration &amp; notes" />
+                <input className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500" placeholder="Record pressure, holding duration &amp; notes" />
               </div>
-              <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600">
+              <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 py-3!">
                 <i className="fa-solid fa-floppy-disk mr-1"></i> Commit Entry to Lab Ledger
               </button>
             </div>

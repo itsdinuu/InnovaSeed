@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [errorMessage, setErrorMessage] = useState('')
 
   const roles = [
-    { icon: 'fa-graduation-cap', title: 'Student Innovator', desc: 'Log trials, update notebooks, and submit prototypes.', workspace: 'Student Workspace', link: '/dashboard/student' },
+    { icon: 'fa-graduation-cap', title: 'Student Innovator', desc: 'Log trials, update notebooks, and submit prototypes.', workspace: 'Student Workspace', link: '/student/dashboard' },
     { icon: 'fa-user-tie', title: 'Faculty & Mentor', desc: 'Review telemetry, sign-offs, and ethical clearances.', workspace: 'Mentor Console', link: '/dashboard/mentor' },
     { icon: 'fa-trophy', title: 'Competition Judge', desc: 'Score qualifying teams and simulate INASEF rubrics.', workspace: 'Judge Portal', link: '/dashboard/judges' }
   ]

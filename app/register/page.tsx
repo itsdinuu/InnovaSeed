@@ -54,9 +54,9 @@ export default function RegisterPage() {
 
       if (error) throw error
 
-      // 2. Jika berhasil, arahkan ke halaman dashboard
-      alert('Account registration successful! Welcome to InnovaSeed.')
-      router.push('/dashboard')
+      // 2. Jika berhasil, arahkan ke halaman login
+      alert('Team account registration successful! Please sign in.')
+      router.push('/login')
 
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An error occurred while registering with Supabase.'
