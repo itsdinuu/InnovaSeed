@@ -2,10 +2,12 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [activeRole, setActiveRole] = useState(0)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -26,19 +28,26 @@ export default function LoginPage() {
     setErrorMessage('')
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (error) throw error
+      if (error || !data.session) {
+        setErrorMessage('Login failed. Please check your email and password.')
+        return
+      }
 
-      window.location.href = roles[activeRole].link
+      const userEmail = data.session.user.email || ''
+      const userRole = data.session.user.user_metadata?.role || 'student'
+
+      if (userEmail === 'mentor@Innovaseed.com' || userEmail.includes('mentor') || userRole === 'mentor') {
+        router.push('/mentor')
+      } else {
+        router.push('/dashboard/student')
+      }
     } catch (err: unknown) {
-      const message = err instanceof Error
-        ? err.message
-        : 'Failed to sign in. Please check your email and password.'
-
+      const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
       setErrorMessage(message)
     } finally {
       setLoading(false)

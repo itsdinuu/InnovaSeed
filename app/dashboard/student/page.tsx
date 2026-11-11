@@ -320,7 +320,6 @@ export default function StudentDashboardPage() {
         </div>
       )}
 
-      {/* Toast Notification Kustom */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs">
           <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">

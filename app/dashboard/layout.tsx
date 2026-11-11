@@ -22,8 +22,18 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   const [formTrack, setFormTrack] = useState('National Science Fair Track')
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-  // Ambil state dan fungsi toggle dari ThemeContext global
   const { isDarkMode, toggleDarkMode } = useTheme()
+
+  const fetchUnreadCount = async () => {
+    const { count, error } = await supabase
+      .from('mentor_feedback')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_read', false)
+
+    if (!error && count !== null) {
+      setUnreadCount(count)
+    }
+  }
 
   useEffect(() => {
     async function getDashboardData() {
@@ -35,6 +45,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           setFormLeadName(metadata.lead_name)
         }
         if (metadata?.team_name) {
+  
           setTeamName(metadata.team_name)
           setFormTeamName(metadata.team_name)
         }
@@ -44,17 +55,28 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const { count, error } = await supabase
-        .from('mentor_feedback')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_read', false)
-
-      if (!error && count !== null) {
-        setUnreadCount(count)
-      }
+      fetchUnreadCount()
     }
 
     getDashboardData()
+
+    // --- FITUR SUPABASE REALTIME (WEBBSOCKET) ---
+    // Mendengarkan perubahan data pada tabel mentor_feedback secara real-time
+    const channel = supabase
+      .channel('realtime-mentor-feedback')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mentor_feedback' },
+        (payload) => {
+          console.log('Realtime change detected:', payload)
+          fetchUnreadCount() // Otomatis hitung ulang jumlah pesan unread saat ada insert/update
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   const handleSignOut = async () => {
@@ -68,7 +90,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     setUserName(formLeadName)
     setCompetitionTrack(formTrack)
 
-    // Simpan perubahan ke Supabase Auth Metadata agar permanen saat di-refresh
     await supabase.auth.updateUser({
       data: {
         lead_name: formLeadName,
@@ -88,6 +109,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         body, button, input, select, textarea { font-family: 'Plus Jakarta Sans', sans-serif; }
       `}</style>
+
+      {toastMessage && (
+        <div className="fixed top-5 right-5 z-60 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 shadow-lg">
+          {toastMessage}
+        </div>
+      )}
 
       {/* Sidebar Global */}
       <aside className={`hidden lg:flex flex-col w-60 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`}>
@@ -172,7 +199,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
       {/* Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Main Content Header */}
         <header className={`flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3.5 sticky top-0 z-10 transition-colors ${isDarkMode ? 'bg-slate-900/90 border-slate-800 backdrop-blur-md' : 'bg-white/90 border-[#d8c3ad] backdrop-blur-md'}`}>
           <div className="relative flex-1 min-w-55 max-w-sm">
             <i className="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
@@ -197,7 +223,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
               Sprint Active
             </span>
 
-            {/* Tombol Switch Mode Global */}
             <button 
               onClick={toggleDarkMode}
               title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
@@ -205,19 +230,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             >
               <i className={`fa-solid ${isDarkMode ? 'fa-sun' : 'fa-moon'}`}></i>
               <span className="hidden xl:inline text-[11px]">{isDarkMode ? 'Light' : 'Dark'}</span>
-            </button>
-
-            <button 
-              onClick={() => alert('Live notification panel checked.')}
-              className={`relative p-2 rounded-xl border transition cursor-pointer shadow-2xs ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-[#d8c3ad] text-[#534434] hover:bg-[#fff1e5]'}`}
-              title="Notifications"
-            >
-              <i className="fa-regular fa-bell text-sm"></i>
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold grid place-items-center animate-pulse">
-                  {unreadCount}
-                </span>
-              )}
             </button>
           </div>
         </header>
@@ -227,7 +239,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Modal Settings Pop-up */}
+      {/* Modal Settings */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
@@ -274,20 +286,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </select>
               </div>
 
-              <div className={`p-3 rounded-xl border flex items-center justify-between mt-2 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-[#fff1e5]/50 border-[#d8c3ad]'}`}>
-                <div>
-                  <b className="block">Theme Mode</b>
-                  <span className="text-[10px] text-slate-400">{isDarkMode ? 'Dark Mode Active' : 'Light Mode Active'}</span>
-                </div>
-                <button 
-                  type="button"
-                  onClick={toggleDarkMode}
-                  className="px-3 py-1.5 rounded-lg font-bold text-xs bg-amber-500 text-slate-950 cursor-pointer"
-                >
-                  Toggle Theme
-                </button>
-              </div>
-
               <div className="flex justify-end gap-3 pt-3">
                 <button 
                   type="button"
@@ -304,19 +302,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs">
-          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
-            <i className="fa-solid fa-check"></i>
-          </span>
-          <div>
-            <b className="block text-slate-200">Success</b>
-            <p className="text-slate-400">{toastMessage}</p>
           </div>
         </div>
       )}
