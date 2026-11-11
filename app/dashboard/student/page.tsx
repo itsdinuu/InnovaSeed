@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 
-export default function DashboardPage() {
+export default function StudentDashboardPage() {
   const [userName, setUserName] = useState('Innovator')
 
   useEffect(() => {

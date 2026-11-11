@@ -1,7 +1,7 @@
 "use client"
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -11,6 +11,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [userName, setUserName] = useState('Innovator')
   const [teamName, setTeamName] = useState('Team GeoPoly')
 
@@ -26,10 +27,15 @@ export default function DashboardLayout({
     getUserData()
   }, [])
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Sidebar Global yang Bersih & Profesional */}
-      <aside className="hidden lg:flex flex-col w-57 shrink-0 bg-white border-r border-slate-200 p-4 sticky top-0 h-screen">
+      {/* Sidebar Global */}
+      <aside className="hidden lg:flex flex-col w-60 shrink-0 bg-white border-r border-slate-200 p-4 sticky top-0 h-screen">
         <div className="flex items-center gap-3 mb-5">
           <span className="w-10 h-10 rounded-xl bg-amber-500 text-white grid place-items-center">
             <i className="fa-solid fa-seedling"></i>
@@ -40,39 +46,50 @@ export default function DashboardLayout({
           </div>
         </div>
         
-        <Link href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 w-full mb-5">
+        <Link href="/dashboard/student" className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 w-full mb-5">
           + New Innovation
         </Link>
 
+        {/* Menu Navigasi dengan Ikon Lengkap */}
         <nav className="space-y-1 text-sm">
-          <Link href="/dashboard" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${pathname === '/dashboard' ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
+          <Link href="/dashboard/student" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${pathname === '/dashboard/student' ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
             <i className="fa-solid fa-table-cells-large w-4 text-center"></i>Dashboard
           </Link>
-          <Link href="/idea-bank" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${pathname === '/idea-bank' ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
+          <Link href="/dashboard/idea-bank" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${pathname?.includes('/idea-bank') ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
             <i className="fa-solid fa-lightbulb w-4 text-center"></i>Idea Bank
           </Link>
-          <Link href="/workspace" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${pathname === '/workspace' ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
+          <Link href="/dashboard/workspace" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${pathname?.includes('/workspace') ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
             <i className="fa-solid fa-folder-open w-4 text-center"></i>Project Workspace
           </Link>
-          <Link href="/notes" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${pathname === '/notes' ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
+          <Link href="/dashboard/notes" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${pathname?.includes('/notes') ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
             <i className="fa-solid fa-pen-to-square w-4 text-center"></i>Prototype Notes
           </Link>
-          <Link href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50">
-            <i className="fa-solid fa-comments w-4 text-center"></i>Mentor Feedback
-            <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">1 New</span>
+          <Link href="/dashboard/mentor" className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg ${pathname?.includes('/mentor') ? 'bg-amber-100/60 text-amber-900 font-semibold border-l-[3px] border-amber-500' : 'text-slate-600 hover:bg-slate-50'}`}>
+            <div className="flex items-center gap-3">
+              <i className="fa-solid fa-comments w-4 text-center"></i>
+              <span>Mentor Feedback</span>
+            </div>
+            <span className="bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">1 New</span>
           </Link>
         </nav>
 
-        <div className="mt-auto pt-4 border-t border-slate-200">
+        {/* Bagian Bawah: Profil User & Tombol Sign Out */}
+        <div className="mt-auto pt-4 border-t border-slate-200 space-y-3">
           <div className="flex items-center gap-3">
-            <span className="w-9 h-9 rounded-full bg-amber-100 text-amber-800 text-xs font-bold grid place-items-center">
+            <span className="w-9 h-9 rounded-full bg-amber-100 text-amber-800 text-xs font-bold grid place-items-center shrink-0">
               {userName.substring(0, 2).toUpperCase()}
             </span>
-            <div className="text-sm leading-tight">
-              <b>{userName}</b>
-              <p className="text-xs text-slate-500">{teamName} • Lead</p>
+            <div className="text-sm leading-tight truncate">
+              <b className="truncate block">{userName}</b>
+              <p className="text-xs text-slate-500 truncate">{teamName} • Lead</p>
             </div>
           </div>
+          <button 
+            onClick={handleSignOut}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition"
+          >
+            <i className="fa-solid fa-right-from-bracket w-4 text-center"></i>Sign Out
+          </button>
         </div>
       </aside>
 
