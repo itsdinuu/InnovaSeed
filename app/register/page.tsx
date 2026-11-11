@@ -37,7 +37,7 @@ export default function RegisterPage() {
     setErrorMessage('')
 
     try {
-      // 1. Daftarkan akun ke Supabase Auth
+      // 1. Register account with Supabase Auth
       const { error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -54,7 +54,7 @@ export default function RegisterPage() {
 
       if (error) throw error
 
-      // 2. Jika berhasil, arahkan ke halaman login
+      // 2. If successful, redirect to login
       alert('Team account registration successful! Please sign in.')
       router.push('/login')
 
@@ -68,7 +68,7 @@ export default function RegisterPage() {
 
   return (
     <div className="font-sans text-slate-900 bg-white min-h-screen grid lg:grid-cols-[0.8fr_1.2fr]">
-      {/* Sisi Kiri: Banner / Branding */}
+      {/* Left Side: Banner / Branding */}
       <aside className="hidden lg:flex flex-col justify-between p-10 text-white bg-linear-to-b from-stone-950 via-stone-900 to-amber-950">
         <div>
           <div className="flex items-center gap-3">
@@ -122,12 +122,12 @@ export default function RegisterPage() {
           </div>
           <div className="flex justify-between text-xs text-slate-500 mt-6 pt-4 border-t border-white/10">
             <span><i className="fa-solid fa-lock mr-1"></i> ISO 17025 Research Log</span>
-            <span>© 2025 Plego Indonesia Ecosystem</span>
+            <span>© 2026 Plego Indonesia Ecosystem</span>
           </div>
         </div>
       </aside>
 
-      {/* Sisi Kanan: Form Pendaftaran */}
+      {/* Right Side: Registration Form */}
       <main className="flex flex-col justify-center px-6 sm:px-12 xl:px-20 py-10">
         <form onSubmit={handleRegister} className="w-full max-w-129 mx-auto">
           <div className="flex justify-between text-[11px] tracking-wider font-semibold text-slate-600">
@@ -136,7 +136,7 @@ export default function RegisterPage() {
           </div>
 
           <h1 className="text-3xl font-bold mt-5">Register your Innovation Team</h1>
-          <p className="text-slate-500 mt-2 text-sm">Create a team account to join the InnovaSeed 2025 cohort and access your research workspace.</p>
+          <p className="text-slate-500 mt-2 text-sm">Create a team account to join the InnovaSeed 2026 cohort and access your research workspace.</p>
 
           {errorMessage && (
             <div className="bg-red-50 border border-red-200 text-red-600 text-xs p-3 rounded-lg mt-4">
@@ -176,7 +176,7 @@ export default function RegisterPage() {
             <div className="sm:col-span-2">
               <div className="flex justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-700">Institutional Email</label>
-                <span className="text-[11px] text-slate-400">e.g., student.lead@geopoly.ac.id</span>
+                <span className="text-[11px] text-slate-400">e.g., student.lead@smkn8jkt.sch.id</span>
               </div>
               <div className="relative">
                 <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
@@ -186,21 +186,21 @@ export default function RegisterPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                   className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="student.lead@geopoly.ac.id"
+                  placeholder="student.lead@smkn8jkt.sch.id"
                 />
               </div>
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">University / Institution</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">School / Institution</label>
               <div className="relative">
-                <i className="fa-solid fa-building-columns absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
+                <i className="fa-solid fa-school absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
                   required
                   value={formData.institution}
                   onChange={(e) => setFormData({...formData, institution: e.target.value})}
                   className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="Search your institution"
+                  placeholder="e.g., SMKN 8 Jakarta"
                 />
               </div>
             </div>
