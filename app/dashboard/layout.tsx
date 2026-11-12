@@ -61,7 +61,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
       const user = session.user
 
-      // Ambil nama asli dari tabel 'profiles' Supabase
+      // 1. Ambil nama asli dari tabel 'profiles' Supabase terlebih dahulu (Paling Akurat)
+      let activeName = 'Innovator'
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
@@ -69,14 +70,15 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         .maybeSingle()
 
       if (profileData && profileData.full_name) {
-        setUserName(profileData.full_name)
-        setFormLeadName(profileData.full_name)
+        activeName = profileData.full_name
       } else if (user?.user_metadata?.lead_name) {
-        setUserName(user.user_metadata.lead_name)
-        setFormLeadName(user.user_metadata.lead_name)
+        activeName = user.user_metadata.lead_name
       }
 
-      // Ambil data tim dari Supabase
+      setUserName(activeName)
+      setFormLeadName(activeName)
+
+      // 2. Ambil data tim dari Supabase
       const { data: teamData, error } = await supabase
         .from('teams')
         .select('*')
@@ -87,10 +89,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         setTeamRecordId(teamData.id)
         setTeamName(teamData.team_name)
         setFormTeamName(teamData.team_name)
-        if (teamData.lead_name && !profileData?.full_name) {
-          setUserName(teamData.lead_name)
-          setFormLeadName(teamData.lead_name)
-        }
         if (teamData.members && Array.isArray(teamData.members)) {
           setTeamMembers(teamData.members)
         }
@@ -98,13 +96,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           setFormMentorCode(teamData.mentor_code)
         }
       } else {
-        // Jika belum ada tim sama sekali, buat otomatis sebagai Lead
-        const defaultName = profileData?.full_name || user?.user_metadata?.lead_name || 'Innovator'
+        // Jika belum ada tim sama sekali, buat otomatis
         const { data: newTeam } = await supabase
           .from('teams')
           .insert([{
             team_name: 'Independent Innovator',
-            lead_name: defaultName,
+            lead_name: activeName,
             members: [],
             cohort_batch: 'National Science Fair Track',
             mentor_code: ''
@@ -132,9 +129,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           console.log('Realtime team update:', payload)
           if (payload.new) {
             setTeamName((currentTeamName) => payload.new?.team_name ?? currentTeamName)
-            if (payload.new?.lead_name) {
-              setUserName(payload.new.lead_name)
-            }
             setTeamMembers(payload.new.members || [])
             if (payload.new.mentor_code !== undefined) {
               setFormMentorCode(payload.new.mentor_code)
