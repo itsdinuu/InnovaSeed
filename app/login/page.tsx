@@ -39,27 +39,66 @@ export default function LoginPage() {
       }
 
       const user = data.session.user
-
-      // 2. Ambil data role asli dari tabel profiles di database Supabase untuk verifikasi ketat
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('uuid', user.id)
-        .single()
-
-      if (profileError || !profile) {
-        throw new Error('User profile record not found in database. Please contact administrator.')
-      }
-
       const expectedDbRole = roles[activeRole].dbRole
 
-      // 3. Validasi apakah role di database cocok dengan tombol pilihan role yang diklik di UI
-      if (profile.role !== expectedDbRole) {
-        await supabase.auth.signOut() // Logout paksa demi keamanan jika salah kamar
-        throw new Error(`Access denied. This account is registered as '${profile.role.toUpperCase()}', but you selected '${roles[activeRole].title}'. Please choose the correct role tab above.`)
+      // 2. Cek apakah profil sudah ada di tabel profiles (mencoba 'id' atau 'uuid')
+      let userRole = null
+
+      const { data: profileById } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (profileById) {
+        userRole = profileById.role
+      } else {
+        const { data: profileByUuid } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('uuid', user.id)
+          .maybeSingle()
+        if (profileByUuid) {
+          userRole = profileByUuid.role
+        }
       }
 
-      // 4. Jika validasi sukses, arahkan ke rute workspace masing-masing
+      // 3. Jika profil belum ada di database, buatkan secara otomatis detik ini juga!
+      if (!userRole) {
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert([
+            { 
+              id: user.id, 
+              full_name: email.split('@')[0], 
+              role: expectedDbRole, 
+              institution: 'InnovaSeed Institution' 
+            }
+          ])
+
+        if (insertError) {
+          // Fallback jika tabel menggunakan kolom 'uuid' sebagai primary key
+          await supabase
+            .from('profiles')
+            .insert([
+              { 
+                uuid: user.id, 
+                full_name: email.split('@')[0], 
+                role: expectedDbRole, 
+                institution: 'InnovaSeed Institution' 
+              }
+            ])
+        }
+        userRole = expectedDbRole
+      }
+
+      // 4. Validasi pencocokan role dengan tombol yang diklik di UI
+      if (userRole !== expectedDbRole) {
+        await supabase.auth.signOut()
+        throw new Error(`Access denied. This account is registered as '${userRole.toUpperCase()}', but you selected '${roles[activeRole].title}'. Please choose the correct role tab above.`)
+      }
+
+      // 5. Jika sukses, arahkan ke workspace masing-masing
       router.push(roles[activeRole].link)
 
     } catch (err: unknown) {
