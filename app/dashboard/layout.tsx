@@ -57,12 +57,18 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
+      // if (!session) {
+      //   router.push('/login')
+      //   return
+      // }
+
+      // const user = session.user
+      const user = session?.user
+
+      if (!user) {
         router.push('/login')
         return
       }
-
-      const user = session.user
 
       const { data: profileData } = await supabase
         .from('profiles')
