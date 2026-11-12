@@ -38,25 +38,27 @@ export default function RegisterPage() {
     setErrorMessage('')
 
     try {
-      // 1. Register account with Supabase Auth
+      // 1. Register account with Supabase Auth dan kirim metadata tambahan
+      // Metadata ini akan ditangkap oleh Database Trigger untuk otomatis mengisi tabel 'profiles'
       const { error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
           data: {
+            full_name: formData.leadName, // Disamakan dengan kolom 'full_name' di tabel profiles
             team_name: formData.teamName,
-            lead_name: formData.leadName,
             institution: formData.institution,
             research_field: formData.researchField,
-            team_size: formData.teamSize
+            team_size: formData.teamSize,
+            role: 'student' // Otomatis diset sebagai student saat register via form ini
           }
         }
       })
 
       if (error) throw error
 
-      // 2. If successful, redirect to login
-      alert('Team account registration successful! Please sign in.')
+      // 2. Jika sukses, arahkan ke halaman login
+      alert('Team account registration successful! Your profile has been automatically created. Please sign in.')
       router.push('/login')
 
     } catch (err: unknown) {
