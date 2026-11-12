@@ -19,24 +19,24 @@ type TeamRealtimePayload = {
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [userName, setUserName] = useState('Bima')
+  const [userName, setUserName] = useState('Innovator')
   const [teamName, setTeamName] = useState('Independent Innovator')
   const [competitionTrack, setCompetitionTrack] = useState('National Science Fair Track')
   const [unreadCount, setUnreadCount] = useState(0)
 
-  // State untuk Modal Settings & Team Management (Termasuk Mentor Code)
+  // State for Settings & Team Management Modal (Including Mentor Code)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [formTeamName, setFormTeamName] = useState('Independent Innovator')
-  const [formLeadName, setFormLeadName] = useState('Bima')
+  const [formLeadName, setFormLeadName] = useState('Innovator')
   const [formTrack, setFormTrack] = useState('National Science Fair Track')
   const [formMentorCode, setFormMentorCode] = useState('')
   
-  // State anggota tim
+  // Team members state
   const [teamMembers, setTeamMembers] = useState<string[]>([])
   const [newMemberName, setNewMemberName] = useState('')
   const [teamRecordId, setTeamRecordId] = useState<number | null>(null)
 
-  // State untuk Hover Popup Info Tim (Online Status)
+  // Hover Popup State for Team Info (Online Status)
   const [isTeamHovered, setIsTeamHovered] = useState(false)
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -61,8 +61,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
       const user = session.user
       
-      // Ambil nama dari tabel 'profiles' Supabase terlebih dahulu
-      let currentName = 'Bima'
+      // Fetch name from Supabase 'profiles' table first
+      let currentName = 'Innovator'
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
@@ -74,7 +74,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       } else if (user.user_metadata?.lead_name) {
         currentName = user.user_metadata.lead_name
       } else if (user.email) {
-        // Ambil bagian sebelum '@', buang angka, lalu jadikan huruf kapital di awal
+        // Strip numbers from email prefix and capitalize the first letter
         const emailPrefix = user.email.split('@')[0].replace(/[0-9]/g, '').trim()
         if (emailPrefix) {
           currentName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1)
@@ -84,7 +84,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       setUserName(currentName)
       setFormLeadName(currentName)
 
-      // Ambil data tim dari Supabase
+      // Fetch team data from Supabase
       const { data: teamData, error } = await supabase
         .from('teams')
         .select('*')
@@ -124,7 +124,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     getDashboardData()
 
-    // --- REALTIME SUBSCRIPTION SUPABASE (WEBSOCKET) ---
+    // --- SUPABASE REALTIME SUBSCRIPTION (WEBSOCKET) ---
     const realtimeChannel = supabase
       .channel('realtime-dashboard-sync')
       .on(
@@ -244,7 +244,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Sidebar Global */}
+      {/* Global Sidebar */}
       <aside className={`hidden lg:flex flex-col w-60 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`}>
         <div className="flex items-center gap-3 mb-5">
           <Image
@@ -265,7 +265,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           + New Innovation
         </Link>
 
-        {/* Menu Navigasi */}
+        {/* Navigation Menu */}
         <nav className="space-y-1 text-sm">
           <Link href="/dashboard/student" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/student' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
             <i className="fa-solid fa-table-cells-large w-4 text-center"></i>Dashboard
@@ -298,10 +298,10 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           </Link>
         </nav>
 
-        {/* Bagian Bawah: Kartu Info Tim dengan Hover Popup Realtime Online Status */}
+        {/* Bottom Section: Team Info Card with Realtime Online Status Hover Popup */}
         <div className={`mt-auto pt-4 border-t space-y-2.5 relative ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]'}`}>
           
-          {/* POPUP HOVER KE ATAS (REALTIME ONLINE MEMBERS & MENTOR CODE) */}
+          {/* HOVER POPUP (REALTIME ONLINE MEMBERS & MENTOR CODE) */}
           {isTeamHovered && (
             <div className={`absolute bottom-full left-0 right-0 mb-2 p-3 rounded-2xl border shadow-xl transition-all duration-300 transform translate-y-0 opacity-100 z-30 space-y-2 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/50' : 'bg-white border-[#d8c3ad] text-[#221a12] shadow-amber-900/10'}`}>
               <div className="flex items-center justify-between text-[11px] font-bold border-b pb-1.5 border-inherit">
@@ -314,7 +314,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
               </div>
               
               <div className="space-y-1.5 max-h-36 overflow-y-auto text-xs">
-                {/* Lead Team */}
+                {/* Team Lead */}
                 <div className="flex items-center justify-between py-0.5">
                   <div className="flex items-center gap-2 truncate">
                     <span className="relative flex h-2 w-2">
@@ -343,7 +343,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {/* KARTU INFO TIM (TRIGGER HOVER) */}
+          {/* TEAM INFO CARD (HOVER TRIGGER) */}
           <div 
             onMouseEnter={() => setIsTeamHovered(true)}
             onMouseLeave={() => setIsTeamHovered(false)}
@@ -439,7 +439,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Modal Settings & Team Management (Termasuk Input Mentor Code) */}
+      {/* Settings & Team Management Modal (Including Mentor Code Input) */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
@@ -473,17 +473,17 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 />
               </div>
 
-              {/* INPUT KODE MENTOR (KODE KELAS) */}
+              {/* MENTOR CODE INPUT */}
               <div>
                 <label className="block font-semibold mb-1 text-amber-500">Mentor Invite Code (e.g. MAYA-2026)</label>
                 <input 
                   type="text"
-                  placeholder="Masukkan kode mentor..."
+                  placeholder="Enter mentor code..."
                   value={formMentorCode}
                   onChange={(e) => setFormMentorCode(e.target.value.toUpperCase())}
                   className={`w-full rounded-xl px-3 py-2.5 outline-none border font-bold uppercase tracking-wider ${isDarkMode ? 'bg-slate-800 border-amber-500/50 text-white' : 'bg-[#fff8f4] border-amber-500/50 text-[#221a12]'}`}
                 />
-                <p className="text-[10px] text-slate-400 mt-1">Masukkan kode dari dosen/mentor agar tim masuk ke dalam daftar bimbingan mereka.</p>
+                <p className="text-[10px] text-slate-400 mt-1">Enter the code provided by your faculty/mentor to sync your team under their supervision list.</p>
               </div>
 
               <div>
@@ -499,7 +499,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </select>
               </div>
 
-              {/* Bagian Manajemen Anggota Tim */}
+              {/* Team Members Management Section */}
               <div className="space-y-2 pt-2 border-t border-inherit">
                 <label className="block font-semibold">Team Members (Self-Managed)</label>
                 <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-inherit bg-amber-500/5">
