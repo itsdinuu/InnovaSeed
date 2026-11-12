@@ -99,7 +99,7 @@ export default function LoginPage() {
       } else {
         router.push('/dashboard/student')
       }
-
+      
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
       setErrorMessage(message)
