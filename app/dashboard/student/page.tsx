@@ -44,7 +44,18 @@ export default function StudentDashboardPage() {
       const user = session.user
       setCurrentUserId(user.id)
 
-      if (user.user_metadata) {
+      // Sinkronisasi data asli langsung dari tabel 'profiles' Supabase
+      const { data: profileDataResult } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
+        .maybeSingle()
+
+      if (profileDataResult) {
+        if (profileDataResult.full_name) setUserName(profileDataResult.full_name)
+        if (profileDataResult.institution) setInstitution(profileDataResult.institution)
+        if (profileDataResult.role) setResearchField(profileDataResult.role.toUpperCase() + ' TRACK')
+      } else if (user.user_metadata) {
         const meta = user.user_metadata
         if (meta.lead_name) setUserName(meta.lead_name)
         if (meta.research_field) setResearchField(meta.research_field)
@@ -292,10 +303,10 @@ export default function StudentDashboardPage() {
 
             <div className={`p-3 rounded-xl border text-xs space-y-1 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#534434]'}`}>
               <p className="font-bold"><i className="fa-solid fa-circle-info mr-1 text-amber-500"></i> Package Details:</p>
-              <p>• Lead Researcher: {userName}</p>
-              <p>• Institution: {institution}</p>
-              <p>• Track: {researchField}</p>
-              <p>• Total Telemetry Logs: {telemetryLogs.length} entries</p>
+              <p>Lead Researcher: {userName}</p>
+              <p>Institution: {institution}</p>
+              <p>Track: {researchField}</p>
+              <p>Total Telemetry Logs: {telemetryLogs.length} entries</p>
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
@@ -309,7 +320,7 @@ export default function StudentDashboardPage() {
                 onClick={() => {
                   setShowDossierModal(false)
                   setToastMessage("Research Dossier PDF successfully compiled and downloaded!")
-                  setTimeout(() => setToastMessage(null), 4000) // Toast otomatis hilang setelah 4 detik
+                  setTimeout(() => setToastMessage(null), 4000)
                 }}
                 className="px-5 py-2 text-xs font-semibold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] shadow-sm cursor-pointer transition"
               >
