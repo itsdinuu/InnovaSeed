@@ -39,30 +39,59 @@ export default function LoginPage() {
       }
 
       const user = data.session.user
+      const expectedDbRole = roles[activeRole].dbRole
 
-      // 2. Ambil data profil ASLI langsung dari tabel profiles berdasarkan ID user
-      const { data: profile } = await supabase
+      // 2. Cek apakah profil sudah ada di tabel profiles (mencoba kolom 'id' atau 'uuid')
+      let userRole = null
+
+      const { data: profileById } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .maybeSingle()
 
-      // Fallback jika primary key tabel profiles menggunakan kolom 'uuid'
-      let userRole = profile?.role
-      if (!userRole) {
-        const { data: profileUuid } = await supabase
+      if (profileById) {
+        userRole = profileById.role
+      } else {
+        const { data: profileByUuid } = await supabase
           .from('profiles')
           .select('role')
           .eq('uuid', user.id)
           .maybeSingle()
-        userRole = profileUuid?.role
+        if (profileByUuid) {
+          userRole = profileByUuid.role
+        }
       }
 
+      // 3. Jika profil sama sekali belum ada di database, buatkan otomatis detik ini juga!
       if (!userRole) {
-        throw new Error('User profile record not found in database.')
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert([
+            { 
+              id: user.id, 
+              full_name: email.split('@')[0], 
+              role: expectedDbRole, 
+              institution: 'InnovaSeed Institution' 
+            }
+          ])
+
+        if (insertError) {
+          await supabase
+            .from('profiles')
+            .insert([
+              { 
+                uuid: user.id, 
+                full_name: email.split('@')[0], 
+                role: expectedDbRole, 
+                institution: 'InnovaSeed Institution' 
+              }
+            ])
+        }
+        userRole = expectedDbRole
       }
 
-      // 3. Arahkan mutlak berdasarkan role di database (Anti salah kamar!)
+      // 4. Arahkan mutlak berdasarkan role di database (Anti salah kamar!)
       if (userRole === 'mentor') {
         router.push('/mentor')
       } else if (userRole === 'judge') {
@@ -70,6 +99,7 @@ export default function LoginPage() {
       } else {
         router.push('/dashboard/student')
       }
+
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
       setErrorMessage(message)
@@ -313,7 +343,7 @@ export default function LoginPage() {
             <Link href="mailto:destiandhini62@gmail.com" className="underline text-sm text-slate-700 font-medium">Contact Accelerator Registrar</Link>
           </p>
         </div>
-      </main>
+      </main> 
     </div>
   )
 }
