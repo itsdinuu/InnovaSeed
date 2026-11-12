@@ -63,7 +63,7 @@ export default function LoginPage() {
         }
       }
 
-      // 3. Jika profil belum ada di database, buatkan secara otomatis detik ini juga!
+      // 3. Jika profil belum ada di database, buatkan secara otomatis
       if (!userRole) {
         const { error: insertError } = await supabase
           .from('profiles')
@@ -77,7 +77,6 @@ export default function LoginPage() {
           ])
 
         if (insertError) {
-          // Fallback jika tabel menggunakan kolom 'uuid' sebagai primary key
           await supabase
             .from('profiles')
             .insert([
@@ -92,14 +91,23 @@ export default function LoginPage() {
         userRole = expectedDbRole
       }
 
-      // 4. Validasi pencocokan role dengan tombol yang diklik di UI
-      if (userRole !== expectedDbRole) {
-        await supabase.auth.signOut()
-        throw new Error(`Access denied. This account is registered as '${userRole.toUpperCase()}', but you selected '${roles[activeRole].title}'. Please choose the correct role tab above.`)
-      }
+      // 4. Ambil ulang role yang valid dari database untuk memastikan tujuan redirect akurat
+      const { data: finalProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
+        .single()
 
-      // 5. Jika sukses, arahkan ke workspace masing-masing
-      router.push(roles[activeRole].link)
+      const actualRole = finalProfile?.role || userRole
+
+      // 5. Arahkan otomatis berdasarkan role asli di database (Anti salah kamar!)
+      if (actualRole === 'mentor') {
+        router.push('/mentor')
+      } else if (actualRole === 'judge') {
+        router.push('/dashboard/judges')
+      } else {
+        router.push('/dashboard/student')
+      }
 
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
