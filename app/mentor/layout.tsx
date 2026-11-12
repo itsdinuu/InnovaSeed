@@ -17,6 +17,20 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function checkMentorAuth() {
+      const mockStorage = localStorage.getItem('innovaseed_mock_session')
+      if (mockStorage) {
+        try {
+          const mockSession = JSON.parse(mockStorage)
+          if (mockSession?.role === 'mentor' || mockSession?.route === '/mentor') {
+            setMentorName(mockSession.name || 'Faculty Lead')
+            setLoading(false)
+            return
+          }
+        } catch {
+          // ignore invalid mock session data and fall through to Supabase guard
+        }
+      }
+
       const { data: { user }, error: authError } = await supabase.auth.getUser()
       if (authError || !user) {
         router.push('/login')
@@ -49,7 +63,8 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
   }, [router])
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
+    localStorage.removeItem('innovaseed_mock_session')
+    await supabase.auth.signOut().catch(() => undefined)
     router.push('/login')
   }
 
