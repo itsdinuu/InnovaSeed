@@ -4,6 +4,11 @@ import '@fortawesome/fontawesome-free/css/all.min.css' // <-- Wajib ada di sini!
 export const metadata = {
   title: 'InnovaSeed v2',
   description: 'Young Innovator Hub',
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/favicon.ico',
+  },
 }
 
 export default function RootLayout({

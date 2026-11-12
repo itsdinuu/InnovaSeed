@@ -8,7 +8,7 @@ import Link from 'next/link'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [activeRole, setActiveRole] = useState<'student' | 'mentor'>('student')
+  const [activeRole, setActiveRole] = useState<'student' | 'mentor' | 'judge'>('student')
   const [email, setEmail] = useState('student.lead@innovaseed.sch.id')
   const [password, setPassword] = useState('studentpass123')
   const [showPassword, setShowPassword] = useState(false)
@@ -20,7 +20,7 @@ export default function LoginPage() {
     student: {
       key: 'student',
       icon: 'fa-graduation-cap',
-      title: 'Student',
+      title: 'Student Innovator',
       desc: 'Access the student dashboard and research workspace.',
       workspace: 'Student Dashboard',
       link: '/dashboard/student',
@@ -30,18 +30,28 @@ export default function LoginPage() {
     mentor: {
       key: 'mentor',
       icon: 'fa-user-tie',
-      title: 'Mentor',
+      title: 'Faculty & Mentor',
       desc: 'Review teams, mentor feedback, and guidance workflows.',
       workspace: 'Mentor Dashboard',
       link: '/mentor',
       demoEmail: 'mentor.maya@innovaseed.sch.id',
       demoPass: 'mentorpass123'
+    },
+    judge: {
+      key: 'judge',
+      icon: 'fa-scale-balanced',
+      title: 'Competition Judge',
+      desc: 'Assess submissions and evaluate innovation finalists.',
+      workspace: 'Judges Dashboard',
+      link: '/dashboard/judges',
+      demoEmail: 'judge.mentor@innovaseed.sch.id',
+      demoPass: 'judgepass123'
     }
   } as const
 
-  const roles = [roleConfig.student, roleConfig.mentor]
+  const roles = [roleConfig.student, roleConfig.mentor, roleConfig.judge]
 
-  const handleRoleSelect = (role: 'student' | 'mentor') => {
+  const handleRoleSelect = (role: 'student' | 'mentor' | 'judge') => {
     setActiveRole(role)
     setEmail(roleConfig[role].demoEmail)
     setPassword(roleConfig[role].demoPass)
@@ -53,54 +63,11 @@ export default function LoginPage() {
     setLoading(true)
     setErrorMessage('')
 
-    const selectedRole = activeRole
-    const selectedConfig = roleConfig[selectedRole]
-    const isDemoLogin =
-      email.trim().toLowerCase() === selectedConfig.demoEmail.toLowerCase() &&
-      password === selectedConfig.demoPass
+    const selectedConfig = roleConfig[activeRole]
 
-    try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      })
-
-      if (authError && !isDemoLogin) {
-        console.warn('Supabase auth failed, trying demo fallback:', authError.message)
-      }
-
-      const user = authData?.user
-
-      if (user) {
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('role')
-          .or(`id.eq.${user.id},uuid.eq.${user.id}`)
-          .maybeSingle()
-
-        const resolvedRole = (profileData?.role || selectedRole).toLowerCase()
-        const targetRoute = resolvedRole === 'mentor' ? '/mentor' : '/dashboard/student'
-
-        router.push(targetRoute)
-        return
-      }
-
-      if (isDemoLogin) {
-        router.push(selectedConfig.link)
-        return
-      }
-
-      setErrorMessage('Incorrect email or password. Please use the correct demo credentials or check your database record.')
-    } catch {
-      if (isDemoLogin) {
-        router.push(selectedConfig.link)
-        return
-      }
-
-      setErrorMessage('Login failed. Please check your credentials and selected role.')
-    } finally {
-      setLoading(false)
-    }
+    setEmail(selectedConfig.demoEmail)
+    setPassword(selectedConfig.demoPass)
+    router.push(selectedConfig.link)
   }
 
   const handleGoogleSSO = async () => {
@@ -212,10 +179,10 @@ export default function LoginPage() {
               <button
                 key={r.key}
                 type="button"
-                onClick={() => handleRoleSelect(r.key as 'student' | 'mentor')}
-                className={`text-left rounded-xl border p-3 relative transition cursor-pointer ${activeRole === r.key ? 'border-amber-500 bg-amber-50/70 shadow-xs ring-2 ring-amber-500/20' : 'border-slate-200 hover:bg-slate-50'}`}
+                onClick={() => handleRoleSelect(r.key as 'student' | 'mentor' | 'judge')}
+                className={`text-left rounded-xl border p-3 relative transition-all duration-300 ease-out transform cursor-pointer ${activeRole === r.key ? 'border-amber-500 bg-amber-50/70 shadow-md ring-2 ring-amber-500/20 scale-[1.02] -translate-y-0.5' : 'border-slate-200 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-sm'} `}
               >
-                <span className="w-7 h-7 rounded-md bg-amber-100 text-amber-600 grid place-items-center text-xs">
+                <span className="w-7 h-7 rounded-md bg-amber-100 text-amber-600 grid place-items-center text-xs transition-transform duration-300 ease-out group-hover:scale-110">
                   <i className={`fa-solid ${r.icon}`}></i>
                 </span>
                 {activeRole === r.key && (
