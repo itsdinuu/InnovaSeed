@@ -96,15 +96,25 @@ export default function StudentDashboardPage() {
           if (meta.team_size) setTeamSize(meta.team_size)
         }
 
-        const { data: logsData, error: logsError } = await supabase
-          .from('research_logs')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
+        const currentDate = new Date().toISOString().split('T')[0]
 
-        if (!logsError && logsData) {
-          setTelemetryLogs(logsData)
-        }
+        const { data, error } = await supabase
+        .from('research_logs')
+        .insert([{
+          user_id: user.id || currentUserId || 'default-user',
+          title: newLogTitle,
+          status: 'Pending Review',
+          date: currentDate
+        }])
+        .select()
+
+      if (error) throw error
+
+      if (data) {
+        // Gabungkan data terbaru dari database ke state
+        setTelemetryLogs([data[0], ...telemetryLogs])
+      }
+      setNewLogTitle('')
 
         const { data: projectDataResult } = await supabase
           .from('projects')
@@ -133,9 +143,8 @@ export default function StudentDashboardPage() {
       cancelled = true
       window.clearTimeout(timeoutId)
     }
-  }, [])
+  }, [currentUserId, newLogTitle, telemetryLogs])
 
-  // Fungsi untuk menambah log secara real ke database
 const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newLogTitle.trim()) return
@@ -143,54 +152,47 @@ const handleAddLog = async (e: React.FormEvent) => {
     setSubmitting(true)
     try {
       const currentDate = new Date().toISOString().split('T')[0]
-      const newLogPayload = {
-        id: Date.now(), // ID sementara pakai timestamp agar unik
-        user_id: currentUserId || 'mock-user-id',
-        title: newLogTitle,
-        status: 'Pending Review',
-        date: currentDate
-      }
-
-      // Coba kirim ke Supabase (jika koneksi/tabelnya ada)
+      
       const { data, error } = await supabase
         .from('research_logs')
         .insert([{
-          user_id: newLogPayload.user_id,
-          title: newLogPayload.title,
-          status: newLogPayload.status,
-          date: newLogPayload.date
+          title: newLogTitle,
+          status: 'Pending Review',
+          date: currentDate
         }])
         .select()
 
-      if (error) {
-        // Jika tabel/koneksi Supabase error, gunakan mode fallback lokal agar tidak gagal total
-        console.warn('Supabase insert failed, falling back to local state:', error.message)
-        setTelemetryLogs([newLogPayload, ...telemetryLogs])
-      } else if (data && data.length > 0) {
-        setTelemetryLogs([data[0], ...telemetryLogs])
-      } else {
-        setTelemetryLogs([newLogPayload, ...telemetryLogs])
-      }
+      if (error) throw error
 
+      if (data && data.length > 0) {
+        setTelemetryLogs([data[0], ...telemetryLogs])
+      }
+      
       setNewLogTitle('')
+      
+      // Panggil fungsi showToast di sini supaya garis kuningnya hilang & notifikasinya muncul!
+      showToast("Telemetry log successfully recorded to cloud!")
+      
     } catch (err: unknown) {
-      // Jika terjadi error sistem, tetap masukkan ke state lokal supaya UI tidak error/alert
-      const currentDate = new Date().toISOString().split('T')[0]
-      const fallbackLog = {
+      console.error(err)
+      
+      const fallbackEntry = {
         id: Date.now(),
-        user_id: currentUserId || 'mock-user-id',
         title: newLogTitle,
         status: 'Pending Review',
-        date: currentDate
+        date: new Date().toISOString().split('T')[0]
       }
-      setTelemetryLogs([fallbackLog, ...telemetryLogs])
+      
+      setTelemetryLogs([fallbackEntry, ...telemetryLogs])
       setNewLogTitle('')
-      console.error(err)
+      
+      // Panggil juga di sini kalau mau munculin toast saat fallback
+      showToast("Log added locally (Database sync pending).")
+      
     } finally {
       setSubmitting(false)
     }
   }
-  
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -408,4 +410,28 @@ const handleAddLog = async (e: React.FormEvent) => {
       )}
     </div>
   )
+}
+
+function showToast(message: string) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+
+  const toast = document.createElement('div')
+  toast.className = 'fixed bottom-6 right-6 z-[60] animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs'
+  toast.setAttribute('role', 'status')
+  toast.setAttribute('aria-live', 'polite')
+  toast.innerHTML = `
+    <span class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
+      <i class="fa-solid fa-check"></i>
+    </span>
+    <div>
+      <b class="block text-slate-200">Success</b>
+      <p class="text-slate-400">${message}</p>
+    </div>
+  `
+
+  document.body.appendChild(toast)
+  window.setTimeout(() => {
+    toast.classList.add('opacity-0', 'transition-opacity', 'duration-300')
+    window.setTimeout(() => toast.remove(), 300)
+  }, 4000)
 }

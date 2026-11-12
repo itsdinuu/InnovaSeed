@@ -21,6 +21,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const steps = [
     ['Create your team account', 'Register with your institutional email.'],
@@ -57,8 +58,15 @@ export default function RegisterPage() {
 
       if (error) throw error
 
+      const showCustomToast = (msg: string) => {
+        setToastMessage(msg)
+        setTimeout(() => {
+          setToastMessage(null)
+        }, 3000)
+      }
+
       // 2. Jika sukses, arahkan ke halaman login
-      alert('Team account registration successful! Your profile has been automatically created. Please sign in.')
+      showCustomToast('Team account registration successful! Your profile has been automatically created. Please sign in.')
       router.push('/login')
 
     } catch (err: unknown) {
@@ -322,6 +330,17 @@ export default function RegisterPage() {
           </p>
         </form>
       </main>
+
+        {/* Toast Notification Floating */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#1E293B] border border-amber-500/40 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-bounce">
+          <div className="w-6 h-6 rounded-full bg-amber-500 text-slate-900 grid place-items-center font-bold text-xs">
+            ✓
+          </div>
+          <span className="text-xs font-medium">{toastMessage}</span>
+        </div>
+      )}
+
     </div>
   )
 }
