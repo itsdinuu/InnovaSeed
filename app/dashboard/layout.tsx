@@ -57,17 +57,26 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      if (!session) {
+        router.push('/login')
+        return
+      }
 
       const user = session.user
-      
-      // Fetch name from Supabase 'profiles' table first
-      let currentName = 'Innovator'
+
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('*')
+        .select('role, full_name, name')
         .or(`id.eq.${user.id},uuid.eq.${user.id}`)
         .maybeSingle()
+
+      if (profileData?.role && profileData.role !== 'student') {
+        router.push(profileData.role === 'mentor' ? '/mentor' : '/dashboard')
+        return
+      }
+
+      // Fetch name from Supabase 'profiles' table first
+      let currentName = 'Innovator'
 
       if (profileData && profileData.full_name) {
         currentName = profileData.full_name
@@ -156,7 +165,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(realtimeChannel)
     }
-  }, [fetchUnreadCount])
+  }, [fetchUnreadCount, router])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()

@@ -17,29 +17,30 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function checkMentorAuth() {
-      // 1. Cek apakah user sudah login
       const { data: { user }, error: authError } = await supabase.auth.getUser()
       if (authError || !user) {
         router.push('/login')
         return
       }
 
-      // 2. Cek role mentor dari tabel profiles / users di database
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('name, role')
-        .eq('id', user.id)
-        .single()
+        .select('role, full_name, name')
+        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
+        .maybeSingle()
 
-      if (profileError || !profile || profile.role !== 'mentor') {
-        // Jika bukan mentor, alihkan ke dashboard umum atau halaman utama
-        router.push('/dashboard')
+      if (profile && profile.role && profile.role !== 'mentor') {
+        router.push(profile.role === 'student' ? '/dashboard/student' : '/dashboard')
         return
       }
 
-      // Set nama mentor dari database jika ada
-      if (profile.name) {
-        setMentorName(profile.name)
+      if (profileError && !profile) {
+        setLoading(false)
+        return
+      }
+
+      if (profile?.full_name || profile?.name) {
+        setMentorName(profile.full_name || profile.name)
       }
       setLoading(false)
     }
