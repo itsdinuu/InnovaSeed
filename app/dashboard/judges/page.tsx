@@ -1,175 +1,301 @@
 "use client"
 
-import Link from 'next/link'
+import { useMemo, useState } from 'react'
+import { useTheme } from '@/context/ThemeContext'
 
-export default function JudgePortalPage() {
-  const metrics = [
-    { label: 'Assigned Entries', value: '8 Teams', desc: 'Category: Environmental Tech' },
-    { label: 'Evaluations Completed', value: '5 / 8', desc: '3 pending final scoring' },
-    { label: 'Average Score Given', value: '88.4 / 100', desc: 'Calibrated with rubric' },
-    { label: 'Grand Finals Window', value: 'Open', desc: 'Closes Mar 12, 2025' }
-  ]
+type TeamEntry = {
+  id: string
+  code: string
+  team: string
+  project: string
+  track: string
+  status: string
+  score: number | null
+}
 
-  const queue = [
-    { code: 'GEO-2025-081', team: 'Team GeoPoly', project: 'Eco-Friendly Plastic Bricks', track: 'Materials Science', status: 'In Evaluation', highlight: true },
-    { code: 'BIO-2025-104', team: 'Bio-Spark Team', project: 'Banana-Fiber Bioplastic Film', track: 'Biotechnology', status: 'Scored (94.5)' },
-    { code: 'IOT-2025-033', team: 'AgriSense Lab', project: 'Solar-Powered Soil Sensor', track: 'Computer Science', status: 'Pending Review' }
-  ]
+type RubricItem = {
+  id: string
+  label: string
+  weight: number
+  max: number
+  score: number
+}
 
-  const rubricCriteria = [
-    { title: 'Scientific Rigor & Methodology', max: '25 pts', score: '23' },
-    { title: 'Originality & Creativity', max: '20 pts', score: '18' },
-    { title: 'Prototype Viability & Telemetry', max: '25 pts', score: '24' },
-    { title: 'Presentation & Defense Quality', max: '30 pts', score: '27' }
-  ]
+const initialQueue: TeamEntry[] = [
+  { id: 'geo-2025-081', code: 'GEO-2025-081', team: 'Team GeoPoly', project: 'Eco-Friendly Plastic Bricks', track: 'Materials Science', status: 'Pending Review', score: null },
+  { id: 'bio-2025-104', code: 'BIO-2025-104', team: 'Bio-Spark Team', project: 'Banana-Fiber Bioplastic Film', track: 'Biotechnology', status: 'Scored', score: 94.5 },
+  { id: 'iot-2025-033', code: 'IOT-2025-033', team: 'AgriSense Lab', project: 'Solar-Powered Soil Sensor', track: 'Computer Science', status: 'Pending Review', score: null },
+  { id: 'agr-2025-219', code: 'AGR-2025-219', team: 'GreenPath Collective', project: 'Precision Hydroponic Biometrics', track: 'Agricultural Innovation', status: 'Needs Recheck', score: null }
+]
+
+const initialRubric: RubricItem[] = [
+  { id: 'design', label: 'Research Question & Design', weight: 25, max: 25, score: 22 },
+  { id: 'execution', label: 'Execution & Data Collection', weight: 25, max: 25, score: 20 },
+  { id: 'creativity', label: 'Creativity & Innovation', weight: 20, max: 20, score: 18 },
+  { id: 'presentation', label: 'Presentation / Defense', weight: 30, max: 30, score: 27 }
+]
+
+export default function JudgeDashboardPage() {
+  const { isDarkMode } = useTheme()
+  const [queue, setQueue] = useState<TeamEntry[]>(initialQueue)
+  const [selectedTeamId, setSelectedTeamId] = useState<string>(initialQueue[0].id)
+  const [rubric, setRubric] = useState<RubricItem[]>(initialRubric)
+  const [feedback, setFeedback] = useState('Excellent problem framing and strong prototype validation. Continue to improve clarity in the final presentation narrative.')
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isSubmitted, setIsSubmitted] = useState(false)
+
+  const selectedTeam = queue.find((team) => team.id === selectedTeamId) ?? queue[0]
+
+  const totalScore = useMemo(
+    () => rubric.reduce((sum, item) => sum + item.score, 0),
+    [rubric]
+  )
+
+  const maxScore = useMemo(
+    () => rubric.reduce((sum, item) => sum + item.max, 0),
+    [rubric]
+  )
+
+  const scoreProgress = Math.min(100, Math.round((totalScore / maxScore) * 100))
+
+  const handleScoreChange = (id: string, nextValue: number) => {
+    setRubric((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, score: Math.min(Math.max(nextValue, 0), item.max) }
+          : item
+      )
+    )
+  }
+
+  const handleOpenRubric = (teamId: string) => {
+    setSelectedTeamId(teamId)
+    setIsModalOpen(true)
+    setIsSubmitted(false)
+  }
+
+  const handleFinalSubmit = () => {
+    setQueue((prev) =>
+      prev.map((item) =>
+        item.id === selectedTeamId
+          ? { ...item, status: 'Scored', score: totalScore }
+          : item
+      )
+    )
+    setIsSubmitted(true)
+    setIsModalOpen(false)
+  }
 
   return (
-    <div className="flex min-h-screen bg-stone-900 font-sans text-stone-100">
-      {/* Sidebar */}
-      <aside className="hidden lg:flex flex-col w-57 shrink-0 bg-stone-950 border-r border-stone-800 p-4 sticky top-0 h-screen">
-        <div className="flex items-center gap-3 mb-5">
-          <span className="w-10 h-10 rounded-xl bg-amber-500 text-stone-950 grid place-items-center font-bold">
-            <i className="fa-solid fa-trophy"></i>
-          </span>
+    <div className="space-y-6">
+      <div className={`rounded-2xl border p-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#1f1b1a]'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <b className="text-[15px]">InnovaSeed <span className="text-amber-400">Judge</span></b>
-            <p className="text-[11px] text-stone-400">Evaluation Portal v2</p>
-          </div>
-        </div>
-        
-        <div className="rounded-lg bg-stone-900 p-3 text-xs mb-5 border border-stone-800">
-          <p className="text-stone-400">Authorized Evaluator:</p>
-          <b className="block text-amber-300 mt-0.5">Grand Jury Panel #4</b>
-          <span className="text-[10px] text-stone-400">INASEF 2025 Finals</span>
-        </div>
-
-        <nav className="space-y-1 text-sm">
-          <Link href="/dashboard/judges" className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-amber-500">
-            <i className="fa-solid fa-scale-balanced w-4 text-center"></i>Judge Portal
-          </Link>
-          <Link href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-stone-300 hover:bg-stone-900">
-            <i className="fa-solid fa-list-check w-4 text-center"></i>Scoring Queue
-            <span className="ml-auto bg-amber-500 text-stone-950 text-[10px] font-bold px-2 py-0.5 rounded-full">3</span>
-          </Link>
-          <Link href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-stone-300 hover:bg-stone-900">
-            <i className="fa-solid fa-file-lines w-4 text-center"></i>Rubric Guidelines
-          </Link>
-          <Link href="#" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-stone-300 hover:bg-stone-900">
-            <i className="fa-solid fa-medal w-4 text-center"></i>Submitted Scores
-          </Link>
-        </nav>
-
-        <div className="mt-auto">
-          <Link href="/login" className="flex items-center gap-3 px-3 py-2 text-sm text-stone-400 hover:text-white">
-            <i className="fa-solid fa-right-from-bracket w-4"></i>Sign Out
-          </Link>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <div className="flex-1 min-w-0">
-        <header className="flex items-center gap-3 bg-stone-950 border-b border-stone-800 px-6 py-3 sticky top-0 z-10">
-          <div className="relative flex-1 max-w-85">
-            <i className="fa-solid fa-magnifying-glass absolute left-3 top-3 text-stone-400 text-sm"></i>
-            <input className="w-full rounded-lg bg-stone-900 border border-stone-800 pl-9 pr-12 py-2.5 text-sm text-stone-100 outline-none focus:border-amber-500" placeholder="Search team code, project title..." />
-            <kbd className="absolute right-3 top-2.5 text-[10px] text-stone-400 border border-stone-700 rounded px-1.5 py-0.5">⌘K</kbd>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="inline-block rounded-md px-3 py-1 text-xs font-semibold bg-amber-500/10 border border-amber-500/30 text-amber-400">
-              ● Blind Evaluation Mode Active
+            <span className="inline-block rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+              <i className="fa-solid fa-scale-balanced mr-1.5"></i> Grand Jury Panel #4
             </span>
-            <button className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition bg-stone-900 border border-stone-800 text-stone-300 hover:bg-stone-800">
-              <i className="fa-regular fa-bell"></i>
-            </button>
-            <span className="w-9 h-9 rounded-full bg-amber-500 text-stone-950 text-xs font-bold grid place-items-center">JP</span>
-          </div>
-        </header>
-
-        <main className="p-6 lg:p-8 max-w-275">
-          <div>
-            <h1 className="text-2xl font-bold">Competition Judge Portal 🏆</h1>
-            <p className="text-sm text-stone-400 mt-1">Review finalist dossiers, evaluate laboratory telemetry, and input standardized INASEF scoring rubrics.</p>
+            <h1 className="mt-3 text-2xl sm:text-3xl font-extrabold tracking-tight">Competition Judge Portal</h1>
+            <p className={`mt-1 text-sm ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+              Review assigned innovation teams, evaluate against official fair criteria, and finalize compliant score submissions.
+            </p>
           </div>
 
-          {/* Stats Grid */}
-          <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
-            {metrics.map((m, i) => (
-              <div key={i} className="bg-stone-950 border border-stone-800 rounded-xl p-5">
-                <p className="text-xs text-stone-400 mb-1">{m.label}</p>
-                <b className="text-2xl text-stone-100">{m.value}</b>
-                <p className="text-xs text-stone-500 mt-1">{m.desc}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Queue Section */}
-          <section className="bg-stone-950 border border-stone-800 rounded-xl p-6 mt-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="font-bold text-lg"><i className="fa-solid fa-clipboard-list text-amber-500 mr-2"></i>Assigned Finalist Evaluation Queue</h2>
-              <span className="text-xs text-stone-400">National Grand Finals 2025</span>
+          <div className={`rounded-xl border px-4 py-3 text-xs ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-[#fff1e5] border-[#d8c3ad]'}`}>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Evaluation mode</div>
+            <div className="mt-1 font-bold">Blind Review Active</div>
+            <div className="mt-1 text-emerald-600 font-semibold">
+              <i className="fa-solid fa-shield-halved mr-1"></i> Integrity Verified
             </div>
+          </div>
+        </div>
+      </div>
 
-            <div className="space-y-3">
-              {queue.map((item, idx) => (
-                <div key={idx} className={`p-4 rounded-xl border flex flex-wrap items-center justify-between gap-4 ${item.highlight ? 'border-amber-500 bg-amber-500/5' : 'border-stone-800 bg-stone-900/50'}`}>
+      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+          { label: 'Assigned Teams', value: '4', note: 'Current shortlist' },
+          { label: 'Completed', value: '1 / 4', note: 'One finalized review' },
+          { label: 'Average Score', value: '88.4', note: 'Against weighted rubric' },
+          { label: 'Status', value: 'Open', note: 'Next panel in 48 hrs' }
+        ].map((item, index) => (
+          <div key={index} className={`rounded-2xl border p-5 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+            <p className={`text-[11px] uppercase tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{item.label}</p>
+            <div className="mt-3 flex items-end justify-between gap-3">
+              <b className="text-2xl font-extrabold">{item.value}</b>
+              <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-1 text-[10px] font-bold text-amber-600">Live</span>
+            </div>
+            <p className={`mt-2 text-xs ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{item.note}</p>
+          </div>
+        ))}
+      </div>
+
+      <section className={`rounded-2xl border p-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          <div>
+            <h2 className="text-lg font-bold">Assigned Team Queue</h2>
+            <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+              Competition roster for scientific judging and final score validation.
+            </p>
+          </div>
+          <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+            4 Entries Assigned
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          {queue.map((team) => {
+            const isSelected = selectedTeam.id === team.id
+            const statusClass = team.status === 'Scored'
+              ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+              : team.status === 'Needs Recheck'
+                ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
+                : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+
+            return (
+              <div
+                key={team.id}
+                className={`rounded-xl border p-4 transition ${isSelected ? (isDarkMode ? 'border-amber-500/60 bg-amber-500/5' : 'border-amber-500/60 bg-amber-50/70') : (isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-[#d8c3ad] bg-[#fffaf6]')}`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono bg-stone-800 px-2 py-0.5 rounded text-amber-400">{item.code}</span>
-                      <span className="text-[11px] px-2 py-0.5 bg-stone-800 text-stone-300 rounded font-medium">{item.track}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-slate-200 px-2 py-1 text-[11px] font-mono font-semibold text-amber-700 dark:bg-slate-800 dark:text-amber-300">{team.code}</span>
+                      <span className="rounded-md bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-700 border border-amber-500/20">{team.track}</span>
                     </div>
-                    <b className="block text-base mt-1.5">{item.project}</b>
-                    <p className="text-xs text-stone-400">Team: {item.team}</p>
+                    <b className="mt-2 block text-base">{team.project}</b>
+                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Team: {team.team}</p>
                   </div>
 
-                  <div className="flex items-center gap-3 ml-auto">
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${item.status.includes('Scored') ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
-                      {item.status}
-                    </span>
-                    <button className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition bg-amber-500 text-stone-950 hover:bg-amber-400">
-                      Open Rubric Sheet →
+                  <div className="flex items-center gap-3">
+                    <span className={`rounded-md px-2.5 py-1 text-[11px] font-semibold ${statusClass}`}>{team.status}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRubric(team.id)}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-semibold text-[#0F172A] hover:bg-amber-400 transition"
+                    >
+                      Open Rubric <i className="fa-solid fa-arrow-right"></i>
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Active Scoring Rubric Preview */}
-          <section className="bg-stone-950 border border-stone-800 rounded-xl p-6 mt-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-base"><i className="fa-solid fa-calculator text-amber-500 mr-2"></i>INASEF Standard Rubric Breakdown</h3>
-                <p className="text-xs text-stone-400 mt-0.5">Active evaluation for Team GeoPoly (GEO-2025-081)</p>
               </div>
-              <span className="text-xl font-bold text-amber-400">Total: 92 / 100 pts</span>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className={`rounded-2xl border p-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold">Evaluation Summary</h3>
+            <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+              Active review for {selectedTeam.project} • {selectedTeam.team}
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Current total</div>
+            <div className="text-2xl font-extrabold text-amber-500">{totalScore} / {maxScore}</div>
+            {isSubmitted && (
+              <span className="mt-2 inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-600">
+                Finalized
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">Score progress</span>
+            <span className="text-sm font-bold text-amber-600">{scoreProgress}%</span>
+          </div>
+          <div className="h-2.5 w-full rounded-full bg-slate-200 dark:bg-slate-800">
+            <div className="h-2.5 rounded-full bg-amber-500" style={{ width: `${scoreProgress}%` }} />
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <h4 className="text-sm font-bold uppercase tracking-[0.12em] text-amber-600">Qualitative feedback</h4>
+            <textarea
+              value={feedback}
+              onChange={(event) => setFeedback(event.target.value)}
+              rows={6}
+              className={`mt-3 w-full rounded-xl border p-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-[#d8c3ad] text-[#1f1b1a]'}`}
+            />
+          </div>
+
+          <div className={`rounded-xl border p-4 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-[#fffaf6] border-[#d8c3ad]'}`}>
+            <h4 className="text-sm font-bold uppercase tracking-[0.12em] text-amber-600">Panel notes</h4>
+            <ul className={`mt-3 space-y-3 text-sm ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>
+              <li><i className="fa-solid fa-circle-check text-emerald-500 mr-2"></i>Prototype is technically sound and well-documented.</li>
+              <li><i className="fa-solid fa-lightbulb text-amber-500 mr-2"></i>Impact story could be strengthened with external benchmark comparisons.</li>
+              <li><i className="fa-solid fa-users text-sky-500 mr-2"></i>Student team demonstrated strong collaborative execution and communication.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm">
+          <div className={`w-full max-w-3xl rounded-2xl border p-5 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-amber-600 font-semibold">Official rubric</p>
+                <h3 className="mt-1 text-xl font-bold">{selectedTeam.project}</h3>
+                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+                  {selectedTeam.team} • {selectedTeam.track}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                Close
+              </button>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-4 mt-5">
-              {rubricCriteria.map((rc, i) => (
-                <div key={i} className="bg-stone-900 border border-stone-800 rounded-lg p-4">
-                  <div className="flex justify-between text-xs font-semibold text-stone-300 mb-2">
-                    <span>{rc.title}</span>
-                    <span className="text-amber-400">Max: {rc.max}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <input type="range" min="0" max="30" defaultValue={rc.score} className="flex-1 accent-amber-500" />
-                    <span className="w-12 text-center font-bold text-sm bg-stone-950 py-1 rounded border border-stone-800">{rc.score}</span>
+            <div className="mt-5 space-y-4">
+              {rubric.map((criterion) => (
+                <div key={criterion.id} className={`rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-[#d8c3ad] bg-[#fffaf6]'}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold">{criterion.label}</h4>
+                      <p className="text-[11px] text-slate-400">Weight: {criterion.weight} pts</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={0}
+                        max={criterion.max}
+                        value={criterion.score}
+                        onChange={(event) => handleScoreChange(criterion.id, Number(event.target.value))}
+                        className="accent-amber-500"
+                      />
+                      <span className="w-12 text-center rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-sm font-bold text-amber-600">
+                        {criterion.score}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="flex justify-end gap-3 mt-5 pt-4 border-t border-stone-800">
-              <button className="rounded-lg px-4 py-2.5 text-xs font-semibold bg-stone-900 border border-stone-800 text-stone-300 hover:bg-stone-800">
-                Save Draft Evaluation
-              </button>
-              <button className="rounded-lg px-4 py-2.5 text-xs font-semibold bg-amber-500 text-stone-950 hover:bg-amber-400">
-                <i className="fa-solid fa-stamp mr-1.5"></i> Submit Final Official Score
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-amber-600">Total score</div>
+                <div className="text-2xl font-extrabold text-amber-500">{totalScore} / {maxScore}</div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleFinalSubmit}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-sm font-semibold text-[#0F172A] hover:bg-amber-400 transition"
+              >
+                <i className="fa-solid fa-lock"></i> Lock & Submit Final Score
               </button>
             </div>
-          </section>
-        </main>
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

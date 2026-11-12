@@ -183,14 +183,14 @@ export default function LoginPage() {
           <p className="text-slate-500 mt-2 text-sm">Select your research cohort or evaluation role to access your synchronized workspace.</p>
 
           <p className="text-xs font-semibold mt-6 mb-2">Select Account Authorization Role <span className="text-red-500">*</span></p>
-          
+
           <div className="grid sm:grid-cols-2 gap-3">
             {roles.map((r) => (
               <button
                 key={r.key}
                 type="button"
                 onClick={() => handleRoleSelect(r.key as 'student' | 'mentor' | 'judge')}
-                className={`text-left rounded-xl border p-3 relative transition-all duration-300 ease-out transform cursor-pointer ${activeRole === r.key ? 'border-amber-500 bg-amber-50/70 shadow-md ring-2 ring-amber-500/20 scale-[1.02] -translate-y-0.5' : 'border-slate-200 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-sm'} `}
+                className={`text-left rounded-xl border p-3 relative transition-all duration-300 ease-out transform cursor-pointer ${r.key === 'judge' ? 'sm:col-span-2' : ''} ${activeRole === r.key ? 'border-amber-500 bg-amber-50/70 shadow-md ring-2 ring-amber-500/20 scale-[1.02] -translate-y-0.5' : 'border-slate-200 hover:bg-slate-50 hover:-translate-y-0.5 hover:shadow-sm'} `}
               >
                 <span className="w-7 h-7 rounded-md bg-amber-100 text-amber-600 grid place-items-center text-xs transition-transform duration-300 ease-out group-hover:scale-110">
                   <i className={`fa-solid ${r.icon}`}></i>
@@ -202,14 +202,6 @@ export default function LoginPage() {
                 <span className="text-[11px] text-slate-500 leading-snug block mt-1">{r.desc}</span>
               </button>
             ))}
-          </div>
-
-          <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-xs mt-4">
-            <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
-            <div>
-              <b className="text-sm text-slate-800">Demo Mode Active ({roleConfig[activeRole].title})</b>
-              <p className="text-slate-500 mt-0.5">Credentials are auto-filled for instant testing. Submit to enter the {roleConfig[activeRole].workspace}.</p>
-            </div>
           </div>
 
           {errorMessage && (
@@ -283,14 +275,6 @@ export default function LoginPage() {
               </button>
             </div>
 
-            <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-xs mb-4">
-              <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
-              <div>
-                <b className="text-sm text-slate-800">Active 2026 Cohort Synchronizer</b>
-                <p className="text-slate-500 mt-0.5">Authorized users have secure access to rapid telemetry logging, evaluation consoles, and live competition preparation dossiers.</p>
-              </div>
-            </div>
-
             {/* Remember Me Option */}
             <div className="flex items-center mb-4 text-xs">
               <label className="flex items-center gap-2 cursor-pointer text-slate-600">
@@ -302,6 +286,14 @@ export default function LoginPage() {
                 />
                 Remember this secure laboratory workstation for 30 days (ISO/IEC 17025 Compliant Audit Session)
               </label>
+            </div>
+
+            <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-xs mb-4">
+              <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
+              <div>
+                <b className="text-sm text-slate-800">Demo Mode Active ({roleConfig[activeRole].title})</b>
+                <p className="text-slate-500 mt-0.5">Credentials are auto-filled for instant testing. Submit to enter the {roleConfig[activeRole].workspace}.</p>
+              </div>
             </div>
 
             <button

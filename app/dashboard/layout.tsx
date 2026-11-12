@@ -62,13 +62,16 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       const mockStorage = localStorage.getItem('innovaseed_mock_session')
       if (mockStorage) {
         const mockSession = JSON.parse(mockStorage)
-        if (mockSession?.role === 'student') {
+        if (mockSession?.role === 'student' || mockSession?.role === 'judge') {
           user = {
-            id: 'mock-student-user',
+            id: mockSession.role === 'student' ? 'mock-student-user' : 'mock-judge-user',
             email: mockSession.email,
-            user_metadata: { lead_name: mockSession.name || 'Student Innovator' }
+            user_metadata: { lead_name: mockSession.name || (mockSession.role === 'student' ? 'Student Innovator' : 'Competition Judge') }
           }
-          profileData = { role: 'student', full_name: mockSession.name || 'Student Innovator' }
+          profileData = {
+            role: mockSession.role,
+            full_name: mockSession.name || (mockSession.role === 'student' ? 'Student Innovator' : 'Competition Judge')
+          }
         }
       }
 
@@ -92,7 +95,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         profileData = data
       }
 
-      if (profileData?.role && profileData.role !== 'student') {
+      if (profileData?.role && !['student', 'judge'].includes(profileData.role)) {
         router.push(profileData.role === 'mentor' ? '/mentor' : '/dashboard')
         return
       }
