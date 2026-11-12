@@ -7,10 +7,19 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { ThemeProvider, useTheme } from '@/context/ThemeContext'
 
+type TeamRealtimePayload = {
+  new?: {
+    team_name?: string
+    lead_name?: string
+    members?: string[]
+    mentor_code?: string
+  }
+}
+
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [userName, setUserName] = useState('Innovator')
+  const [userName, setUserName] = useState('Bima')
   const [teamName, setTeamName] = useState('Independent Innovator')
   const [competitionTrack, setCompetitionTrack] = useState('National Science Fair Track')
   const [unreadCount, setUnreadCount] = useState(0)
@@ -18,7 +27,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   // State untuk Modal Settings & Team Management (Termasuk Mentor Code)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [formTeamName, setFormTeamName] = useState('Independent Innovator')
-  const [formLeadName, setFormLeadName] = useState('Innovator')
+  const [formLeadName, setFormLeadName] = useState('Bima')
   const [formTrack, setFormTrack] = useState('National Science Fair Track')
   const [formMentorCode, setFormMentorCode] = useState('')
   
@@ -45,17 +54,15 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-useEffect(() => {
+  useEffect(() => {
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
 
       const user = session.user
       
-      // Ambil nama langsung dari metadata auth / email kalau profiles belum ada
-      let currentName = user.user_metadata?.lead_name || user.email?.split('@')[0] || 'Innovator'
-
-      // Ambil nama asli yang paling akurat dari tabel 'profiles'
+      // Ambil nama asli dari tabel 'profiles' terlebih dahulu agar akurat (misal: Bima)
+      let currentName = 'Bima'
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
@@ -64,6 +71,11 @@ useEffect(() => {
 
       if (profileData && profileData.full_name) {
         currentName = profileData.full_name
+      } else {
+        // Fallback membersihkan email jika profil belum ada
+        const rawName = user.user_metadata?.lead_name || user.email?.split('@')[0] || 'Bima'
+        const cleanedName = rawName.replace(/[0-9]/g, '').trim()
+        currentName = cleanedName ? cleanedName.charAt(0).toUpperCase() + cleanedName.slice(1) : 'Bima'
       }
 
       setUserName(currentName)
@@ -108,6 +120,39 @@ useEffect(() => {
     }
 
     getDashboardData()
+
+    // --- REALTIME SUBSCRIPTION SUPABASE (WEBSOCKET) ---
+    const realtimeChannel = supabase
+      .channel('realtime-dashboard-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'teams' },
+        (payload: TeamRealtimePayload) => {
+          console.log('Realtime team update:', payload)
+          if (payload.new) {
+            setTeamName((currentTeamName) => payload.new?.team_name ?? currentTeamName)
+            if (payload.new?.lead_name) {
+              setUserName(payload.new.lead_name)
+            }
+            setTeamMembers(payload.new.members || [])
+            if (payload.new.mentor_code !== undefined) {
+              setFormMentorCode(payload.new.mentor_code)
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mentor_feedback' },
+        () => {
+          fetchUnreadCount()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(realtimeChannel)
+    }
   }, [fetchUnreadCount])
 
   const handleSignOut = async () => {
