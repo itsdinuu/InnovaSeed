@@ -63,21 +63,42 @@ export default function LoginPage() {
     setLoading(true)
     setErrorMessage('')
 
-    const selectedConfig = roleConfig[activeRole]
-    const mockSession = {
-      role: activeRole,
-      email: selectedConfig.demoEmail,
-      name: selectedConfig.title,
-      route: selectedConfig.link,
-      timestamp: Date.now()
+    try {
+      let resolvedRole: 'student' | 'mentor' | 'judge' = activeRole
+
+      const { data: profileMatch, error: profileError } = await supabase
+        .from('profiles')
+        .select('role, full_name, email')
+        .ilike('email', email)
+        .limit(1)
+
+      if (!profileError && profileMatch && profileMatch.length > 0 && profileMatch[0]?.role) {
+        const roleFromDatabase = profileMatch[0].role
+        if (['student', 'mentor', 'judge'].includes(roleFromDatabase)) {
+          resolvedRole = roleFromDatabase as 'student' | 'mentor' | 'judge'
+        }
+      }
+
+      const selectedConfig = roleConfig[resolvedRole]
+      const mockSession = {
+        role: resolvedRole,
+        email: email || selectedConfig.demoEmail,
+        name: selectedConfig.title,
+        route: selectedConfig.link,
+        timestamp: Date.now()
+      }
+
+      localStorage.setItem('innovaseed_mock_session', JSON.stringify(mockSession))
+
+      setEmail(selectedConfig.demoEmail)
+      setPassword(selectedConfig.demoPass)
+      router.replace(selectedConfig.link)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Login failed while checking the assigned role.'
+      setErrorMessage(message)
+    } finally {
+      setLoading(false)
     }
-
-    localStorage.setItem('innovaseed_mock_session', JSON.stringify(mockSession))
-
-    setEmail(selectedConfig.demoEmail)
-    setPassword(selectedConfig.demoPass)
-    router.replace(selectedConfig.link)
-    setLoading(false)
   }
 
   const handleGoogleSSO = async () => {
