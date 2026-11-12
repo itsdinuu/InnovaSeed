@@ -8,7 +8,7 @@ import Link from 'next/link'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [activeRole, setActiveRole] = useState(0)
+  const [activeRole, setActiveRole] = useState(0) // 0: Student, 1: Mentor, 2: Judge
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -17,9 +17,9 @@ export default function LoginPage() {
   const [errorMessage, setErrorMessage] = useState('')
 
   const roles = [
-    { icon: 'fa-graduation-cap', title: 'Student Innovator', desc: 'Log trials, update notebooks, and submit prototypes.', workspace: 'Student Workspace', link: '/dashboard/student' },
-    { icon: 'fa-user-tie', title: 'Faculty & Mentor', desc: 'Review telemetry, sign-offs, and ethical clearances.', workspace: 'Mentor Console', link: '/dashboard/mentor' },
-    { icon: 'fa-trophy', title: 'Competition Judge', desc: 'Score qualifying teams and simulate INASEF rubrics.', workspace: 'Judge Portal', link: '/dashboard/judges' }
+    { icon: 'fa-graduation-cap', title: 'Student Innovator', desc: 'Log trials, update notebooks, and submit prototypes.', workspace: 'Student Workspace', link: '/dashboard/student', dbRole: 'student' },
+    { icon: 'fa-user-tie', title: 'Faculty & Mentor', desc: 'Review telemetry, sign-offs, and ethical clearances.', workspace: 'Mentor Console', link: '/mentor', dbRole: 'mentor' },
+    { icon: 'fa-trophy', title: 'Competition Judge', desc: 'Score qualifying teams and simulate INASEF rubrics.', workspace: 'Judge Portal', link: '/dashboard/judges', dbRole: 'judge' }
   ]
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -28,24 +28,40 @@ export default function LoginPage() {
     setErrorMessage('')
 
     try {
+      // 1. Proses Sign In ke Supabase Auth
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
       if (error || !data.session) {
-        setErrorMessage('Login failed. Please check your email and password.')
-        return
+        throw new Error(error?.message || 'Login failed. Please check your email and password.')
       }
 
-      const userEmail = data.session.user.email || ''
-      const userRole = data.session.user.user_metadata?.role || 'student'
+      const user = data.session.user
 
-      if (userEmail === 'mentor@Innovaseed.com' || userEmail.includes('mentor') || userRole === 'mentor') {
-        router.push('/mentor')
-      } else {
-        router.push('/dashboard/student')
+      // 2. Ambil data role asli dari tabel profiles di database Supabase untuk verifikasi ketat
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('uuid', user.id)
+        .single()
+
+      if (profileError || !profile) {
+        throw new Error('User profile record not found in database. Please contact administrator.')
       }
+
+      const expectedDbRole = roles[activeRole].dbRole
+
+      // 3. Validasi apakah role di database cocok dengan tombol pilihan role yang diklik di UI
+      if (profile.role !== expectedDbRole) {
+        await supabase.auth.signOut() // Logout paksa demi keamanan jika salah kamar
+        throw new Error(`Access denied. This account is registered as '${profile.role.toUpperCase()}', but you selected '${roles[activeRole].title}'. Please choose the correct role tab above.`)
+      }
+
+      // 4. Jika validasi sukses, arahkan ke rute workspace masing-masing
+      router.push(roles[activeRole].link)
+
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
       setErrorMessage(message)
@@ -88,7 +104,7 @@ export default function LoginPage() {
                 priority
               />
               <div>
-                <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">v1.0</span></b>
+                <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">v2.0</span></b>
                 <p className="text-xs text-slate-400">A Plego Indonesia Product</p>
               </div>
             </div>
@@ -164,7 +180,7 @@ export default function LoginPage() {
                 key={n}
                 type="button"
                 onClick={() => setActiveRole(n)}
-                className={`text-left rounded-xl border p-3 relative transition ${n === activeRole ? 'border-amber-500 bg-amber-50/50' : 'border-slate-200 hover:bg-slate-50'}`}
+                className={`text-left rounded-xl border p-3 relative transition cursor-pointer ${n === activeRole ? 'border-amber-500 bg-amber-50/50' : 'border-slate-200 hover:bg-slate-50'}`}
               >
                 <span className="w-7 h-7 rounded-md bg-amber-100 text-amber-600 grid place-items-center text-xs">
                   <i className={`fa-solid ${r.icon}`}></i>
@@ -189,14 +205,14 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={handleSchoolSSO}
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2.5 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs"
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2.5 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs cursor-pointer"
             >
               <i className="fa-solid fa-school text-amber-600"></i> Continue with School SSO (SIAKAD / School Portal)
             </button>
             <button
               type="button"
               onClick={handleGoogleSSO}
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2.5 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs"
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white py-2.5 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs cursor-pointer"
             >
               <i className="fa-brands fa-google text-amber-600"></i> Continue with Google Workspace for Education
             </button>
@@ -211,8 +227,8 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin}>
             <div className="flex justify-between">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Institutional Email or Student Lead ID</label>
-              <span className="text-[11px] text-slate-400">e.g., student.lead@geopoly.ac.id</span>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Institutional Email</label>
+              <span className="text-[11px] text-slate-400">e.g., mentor@innovaseed.sch.id</span>
             </div>
             <div className="relative mb-4">
               <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
@@ -222,7 +238,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                placeholder="student.lead@geopoly.ac.id"
+                placeholder="name@innovaseed.sch.id"
               />
             </div>
 
@@ -243,7 +259,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600"
+                className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <i className={`fa-regular ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
               </button>
@@ -253,7 +269,7 @@ export default function LoginPage() {
               <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
               <div>
                 <b className="text-sm text-slate-800">Active 2026 Cohort Synchronizer</b>
-                <p className="text-slate-500 mt-0.5">Student innovators have 24/7 access to rapid telemetry logging, idea scratchpads, and live competition preparation dossiers.</p>
+                <p className="text-slate-500 mt-0.5">Authorized users have secure access to rapid telemetry logging, evaluation consoles, and live competition preparation dossiers.</p>
               </div>
             </div>
 
@@ -264,7 +280,7 @@ export default function LoginPage() {
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="rounded border-slate-300 text-amber-500 focus:ring-0 w-4 h-4"
+                  className="rounded border-slate-300 text-amber-500 focus:ring-0 w-4 h-4 cursor-pointer"
                 />
                 Remember this secure laboratory workstation for 30 days (ISO/IEC 17025 Compliant Audit Session)
               </label>
@@ -273,13 +289,13 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 cursor-pointer shadow-md"
             >
-              {loading ? 'Signing In...' : `Sign In to ${roles[activeRole].workspace} →`}
+              {loading ? 'Verifying Credentials...' : `Sign In to ${roles[activeRole].workspace} →`}
             </button>
           </form>
 
-          <p className="text-center text-xs text-slate-500 mt-5">Don&apos;t have an InnovaSeed account yet?</p>
+          <p className="text-center text-xs text-slate-500 mt-5">Don&apos;t have an InnovaSeed student team account yet?</p>
           <div className="flex flex-wrap justify-center gap-2 mt-2 text-xs font-semibold">
             <Link href="/register" className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100">+ Register Innovation Team</Link>
           </div>
