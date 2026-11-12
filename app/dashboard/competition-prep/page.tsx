@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -110,6 +110,15 @@ export default function CompetitionPrepPage() {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void fetchCompetitionData()
+    }, 0)
+
+    return () => clearTimeout(timeoutId)
+  }, [fetchCompetitionData])
+
   async function toggleChecklist(id: number, currentStatus: boolean) {
     const updatedStatus = !currentStatus
     setChecklist(checklist.map(item => item.id === id ? { ...item, is_completed: updatedStatus } : item))
