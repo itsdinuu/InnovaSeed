@@ -1,17 +1,16 @@
-"use client"
+﻿"use client"
 
+import { useEffect, useState } from 'react'
 import { useTheme } from '@/context/ThemeContext'
-
-const leaderboard = [
-  { rank: 1, team: 'Team GeoPoly', score: 95.2, cohort: 'Materials Science', trend: '+3.1' },
-  { rank: 2, team: 'Bio-Spark Team', score: 94.5, cohort: 'Biotechnology', trend: '+2.4' },
-  { rank: 3, team: 'GreenPath Collective', score: 91.2, cohort: 'Agricultural Innovation', trend: '+1.8' },
-  { rank: 4, team: 'AgriSense Lab', score: 89.7, cohort: 'Computer Science', trend: '+1.1' },
-  { rank: 5, team: 'EcoLoop Labs', score: 88.7, cohort: 'Environmental Design', trend: '+0.9' }
-]
+import { getLeaderboardRecords } from '@/lib/judgePortalData'
 
 export default function JudgeLeaderboardPage() {
   const { isDarkMode } = useTheme()
+  const [leaderboard, setLeaderboard] = useState<any[]>([])
+
+  useEffect(() => {
+    setLeaderboard(getLeaderboardRecords())
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -48,7 +47,7 @@ export default function JudgeLeaderboardPage() {
               </div>
 
               <div className="mt-3 h-2.5 w-full rounded-full bg-slate-200 dark:bg-slate-800">
-                <div className="h-2.5 rounded-full bg-amber-500" style={{ width: `${entry.score}%` }} />
+                <div className="h-2.5 rounded-full bg-amber-500" style={{ width: `${Math.min(entry.score, 100)}%` }} />
               </div>
             </div>
           ))}

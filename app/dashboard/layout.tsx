@@ -109,11 +109,20 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       } else if (user.user_metadata?.lead_name) {
         currentName = user.user_metadata.lead_name
       } else if (user.email) {
-        // Strip numbers from email prefix and capitalize the first letter
         const emailPrefix = user.email.split('@')[0].replace(/[0-9]/g, '').trim()
         if (emailPrefix) {
           currentName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1)
         }
+      }
+
+      const isJudgeRole = profileData?.role === 'judge' || pathname?.startsWith('/dashboard/judges')
+      if (isJudgeRole) {
+        setUserName(currentName)
+        setTeamName('Grand Jury Panel')
+        setCompetitionTrack('Final Judging Panel')
+        setFormLeadName(currentName)
+        fetchUnreadCount()
+        return
       }
 
       setUserName(currentName)
@@ -191,7 +200,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(realtimeChannel)
     }
-  }, [fetchUnreadCount, router])
+  }, [fetchUnreadCount, pathname, router])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -366,96 +375,121 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           )}
         </nav>
 
-        {/* Bottom Section: Team Info Card with Realtime Online Status Hover Popup */}
+        {/* Bottom Section: Judge Profile or Team Info */}
         <div className={`mt-auto pt-4 border-t space-y-2.5 relative ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]'}`}>
-          
-          {/* HOVER POPUP (REALTIME ONLINE MEMBERS & MENTOR CODE) */}
-          {isTeamHovered && (
-            <div className={`absolute bottom-full left-0 right-0 mb-2 p-3 rounded-2xl border shadow-xl transition-all duration-300 transform translate-y-0 opacity-100 z-30 space-y-2 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/50' : 'bg-white border-[#d8c3ad] text-[#221a12] shadow-amber-900/10'}`}>
-              <div className="flex items-center justify-between text-[11px] font-bold border-b pb-1.5 border-inherit">
-                <span className="flex items-center gap-1.5">
-                  <i className="fa-solid fa-users text-amber-500"></i> Team Members
-                </span>
-                <span className="text-amber-500 text-[10px]">
-                  {formMentorCode ? `Code: ${formMentorCode}` : 'No Mentor Code'}
-                </span>
-              </div>
-              
-              <div className="space-y-1.5 max-h-36 overflow-y-auto text-xs">
-                {/* Team Lead */}
-                <div className="flex items-center justify-between py-0.5">
-                  <div className="flex items-center gap-2 truncate">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    <span className="font-semibold truncate">{userName}</span>
-                  </div>
-                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-bold">Lead</span>
-                </div>
-
-                {/* Team Members */}
-                {teamMembers.map((member, idx) => (
-                  <div key={idx} className="flex items-center justify-between py-0.5">
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                      </span>
-                      <span className="truncate text-slate-400 dark:text-slate-300">{member}</span>
+          {isJudgeArea ? (
+            <>
+              <div className={`rounded-2xl border p-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-[#fff1e5] border-[#d8c3ad]'}`}>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-sm font-extrabold text-[#0F172A]">
+                    {userName.substring(0, 2).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-bold">{userName}</div>
+                    <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+                      Grand Jury Panel #4
                     </div>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-500 font-medium">Active</span>
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* TEAM INFO CARD (HOVER TRIGGER) */}
-          <div 
-            onMouseEnter={() => setIsTeamHovered(true)}
-            onMouseLeave={() => setIsTeamHovered(false)}
-            className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-all ${isDarkMode ? 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800' : 'bg-[#fff1e5]/70 border-[#d8c3ad]/60 hover:bg-[#fbebdd]'}`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="flex -space-x-2 shrink-0 overflow-hidden">
-                <span className="w-6 h-6 rounded-full bg-[#F59E0B] text-slate-950 font-bold text-[9px] grid place-items-center border-2 border-white dark:border-slate-900">
+              <div className={`rounded-xl border p-3 text-[11px] ${isDarkMode ? 'border-slate-700 bg-slate-800/60 text-slate-200' : 'border-[#d8c3ad] bg-[#fffaf6] text-[#534434]'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">Evaluation status</span>
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600">
+                    Active
+                  </span>
+                </div>
+                <div className="mt-2 text-[10px] uppercase tracking-[0.15em] text-amber-600">Final Judging</div>
+              </div>
+            </>
+          ) : (
+            <>
+              {isTeamHovered && (
+                <div className={`absolute bottom-full left-0 right-0 mb-2 p-3 rounded-2xl border shadow-xl transition-all duration-300 transform translate-y-0 opacity-100 z-30 space-y-2 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/50' : 'bg-white border-[#d8c3ad] text-[#221a12] shadow-amber-900/10'}`}>
+                  <div className="flex items-center justify-between text-[11px] font-bold border-b pb-1.5 border-inherit">
+                    <span className="flex items-center gap-1.5">
+                      <i className="fa-solid fa-users text-amber-500"></i> Team Members
+                    </span>
+                    <span className="text-amber-500 text-[10px]">
+                      {formMentorCode ? `Code: ${formMentorCode}` : 'No Mentor Code'}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto text-xs">
+                    <div className="flex items-center justify-between py-0.5">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span className="font-semibold truncate">{userName}</span>
+                      </div>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-bold">Lead</span>
+                    </div>
+
+                    {teamMembers.map((member, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-0.5">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                          </span>
+                          <span className="truncate text-slate-400 dark:text-slate-300">{member}</span>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-500 font-medium">Active</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div 
+                onMouseEnter={() => setIsTeamHovered(true)}
+                onMouseLeave={() => setIsTeamHovered(false)}
+                className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-all ${isDarkMode ? 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800' : 'bg-[#fff1e5]/70 border-[#d8c3ad]/60 hover:bg-[#fbebdd]'}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex -space-x-2 shrink-0 overflow-hidden">
+                    <span className="w-6 h-6 rounded-full bg-[#F59E0B] text-slate-950 font-bold text-[9px] grid place-items-center border-2 border-white dark:border-slate-900">
+                      {userName.substring(0, 2).toUpperCase()}
+                    </span>
+                    {teamMembers.slice(0, 2).map((m, idx) => (
+                      <span key={idx} className="w-6 h-6 rounded-full bg-slate-700 text-slate-200 font-bold text-[9px] grid place-items-center border-2 border-white dark:border-slate-900">
+                        {m.substring(0, 2).toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="min-w-0 text-xs leading-tight">
+                    <b className="block truncate text-[11px]">{teamName}</b>
+                    <span className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+                      Code: {formMentorCode ? formMentorCode : 'Unlinked'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
+                  Live
+                </span>
+              </div>
+
+              <button 
+                onClick={() => setIsSettingsOpen(true)}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]'}`}
+              >
+                <i className="fa-solid fa-gear w-4 text-center text-amber-500"></i>Settings &amp; Team
+              </button>
+
+              <div className="flex items-center gap-3">
+                <span className="w-9 h-9 rounded-full bg-[#FEF3C7] text-[#855300] text-xs font-bold grid place-items-center shrink-0">
                   {userName.substring(0, 2).toUpperCase()}
                 </span>
-                {teamMembers.slice(0, 2).map((m, idx) => (
-                  <span key={idx} className="w-6 h-6 rounded-full bg-slate-700 text-slate-200 font-bold text-[9px] grid place-items-center border-2 border-white dark:border-slate-900">
-                    {m.substring(0, 2).toUpperCase()}
-                  </span>
-                ))}
+                <div className="text-sm leading-tight truncate">
+                  <b className="truncate block">{userName}</b>
+                  <p className={`text-xs truncate ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{teamName} Lead</p>
+                </div>
               </div>
-              <div className="min-w-0 text-xs leading-tight">
-                <b className="block truncate text-[11px]">{teamName}</b>
-                <span className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-                  Code: {formMentorCode ? formMentorCode : 'Unlinked'}
-                </span>
-              </div>
-            </div>
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
-              Live
-            </span>
-          </div>
+            </>
+          )}
 
-          <button 
-            onClick={() => setIsSettingsOpen(true)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]'}`}
-          >
-            <i className="fa-solid fa-gear w-4 text-center text-amber-500"></i>Settings &amp; Team
-          </button>
-
-          <div className="flex items-center gap-3">
-            <span className="w-9 h-9 rounded-full bg-[#FEF3C7] text-[#855300] text-xs font-bold grid place-items-center shrink-0">
-              {userName.substring(0, 2).toUpperCase()}
-            </span>
-            <div className="text-sm leading-tight truncate">
-              <b className="truncate block">{userName}</b>
-              <p className={`text-xs truncate ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{teamName} Lead</p>
-            </div>
-          </div>
           <button 
             onClick={handleSignOut}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition cursor-pointer"
@@ -510,7 +544,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Settings & Team Management Modal (Including Mentor Code Input) */}
-      {isSettingsOpen && (
+      {isSettingsOpen && !isJudgeArea && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
             <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>

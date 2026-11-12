@@ -1,36 +1,28 @@
-"use client"
+﻿"use client"
 
+import { useEffect, useState } from 'react'
 import { useTheme } from '@/context/ThemeContext'
-
-const completed = [
-  {
-    code: 'BIO-2025-104',
-    team: 'Bio-Spark Team',
-    project: 'Banana-Fiber Bioplastic Film',
-    score: 94.5,
-    status: 'Locked',
-    date: '2026-11-10'
-  },
-  {
-    code: 'AGR-2025-219',
-    team: 'GreenPath Collective',
-    project: 'Precision Hydroponic Biometrics',
-    score: 91.2,
-    status: 'Locked',
-    date: '2026-11-09'
-  },
-  {
-    code: 'ENV-2025-771',
-    team: 'EcoLoop Labs',
-    project: 'Low-Waste Urban Micro-Recycling',
-    score: 88.7,
-    status: 'Draft',
-    date: '2026-11-08'
-  }
-]
+import { getJudgeRecords, saveJudgeRecords, type JudgeTeamRecord } from '@/lib/judgePortalData'
 
 export default function JudgeCompletedPage() {
   const { isDarkMode } = useTheme()
+  const [records, setRecords] = useState<JudgeTeamRecord[]>([])
+
+  useEffect(() => {
+    setRecords(getJudgeRecords())
+  }, [])
+
+  const handleToggleStatus = (teamId: string) => {
+    const updated: JudgeTeamRecord[] = records.map((team) =>
+      team.id === teamId
+        ? { ...team, status: team.status === 'Scored' ? 'Draft' : 'Scored', updatedAt: new Date().toISOString() }
+        : team
+    )
+    setRecords(updated)
+    saveJudgeRecords(updated)
+  }
+
+  const lockedCount = records.filter((entry) => entry.status === 'Scored').length
 
   return (
     <div className="space-y-6">
@@ -41,7 +33,7 @@ export default function JudgeCompletedPage() {
             <h1 className="mt-2 text-2xl font-extrabold">Completed Evaluations</h1>
           </div>
           <span className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-600">
-            2 locked submissions
+            {lockedCount} locked submissions
           </span>
         </div>
       </div>
@@ -60,23 +52,27 @@ export default function JudgeCompletedPage() {
               </tr>
             </thead>
             <tbody>
-              {completed.map((item) => (
-                <tr key={item.code} className={isDarkMode ? 'border-t border-slate-800' : 'border-t border-[#f1e2d7]'}>
+              {records.map((item) => (
+                <tr key={item.id} className={isDarkMode ? 'border-t border-slate-800' : 'border-t border-[#f1e2d7]'}>
                   <td className="px-4 py-4">
                     <div className="font-semibold">{item.team}</div>
                     <div className="text-[11px] text-slate-400">{item.code}</div>
                   </td>
                   <td className="px-4 py-4">{item.project}</td>
-                  <td className="px-4 py-4 font-bold text-amber-500">{item.score}</td>
-                  <td className="px-4 py-4 text-slate-500">{item.date}</td>
+                  <td className="px-4 py-4 font-bold text-amber-500">{item.score ?? 0}</td>
+                  <td className="px-4 py-4 text-slate-500">{new Date(item.updatedAt).toLocaleDateString()}</td>
                   <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${item.status === 'Locked' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'}`}>
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${item.status === 'Scored' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'}`}>
                       {item.status}
                     </span>
                   </td>
                   <td className="px-4 py-4 text-right">
-                    <button className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                      Review / Unlock
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStatus(item.id)}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                    >
+                      {item.status === 'Scored' ? 'Review / Unlock' : 'Save as Scored'}
                     </button>
                   </td>
                 </tr>

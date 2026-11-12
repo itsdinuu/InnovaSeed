@@ -1,162 +1,77 @@
-"use client"
+﻿"use client"
 
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { useMemo, useState } from 'react'
 import { useTheme } from '@/context/ThemeContext'
-
-type TeamEntry = {
-  id: string
-  code: string
-  team: string
-  project: string
-  track: string
-  status: string
-  score: number | null
-}
-
-type TeamPayload = {
-  id?: string | number
-  team_name?: string | null
-  student_profile?: { full_name?: string | null } | null
-  project_title?: string | null
-  title?: string | null
-  category?: string | null
-  track?: string | null
-  team_code?: string | null
-  code?: string | null
-  judge_scores?: Array<{ status?: string | null; total_score?: number | null }>
-}
-
-type RubricItem = {
-  id: string
-  label: string
-  weight: number
-  max: number
-  score: number
-}
-
-const initialRubric: RubricItem[] = [
-  { id: 'design', label: 'Research Question & Design', weight: 25, max: 25, score: 22 },
-  { id: 'execution', label: 'Execution & Data Collection', weight: 25, max: 25, score: 20 },
-  { id: 'creativity', label: 'Creativity & Innovation', weight: 20, max: 20, score: 18 },
-  { id: 'presentation', label: 'Presentation / Defense', weight: 30, max: 30, score: 27 }
-]
+import { getJudgeRecords, getJudgeTotals, saveJudgeRecords, type JudgeTeamRecord } from '@/lib/judgePortalData'
 
 export default function JudgeDashboardPage() {
   const { isDarkMode } = useTheme()
-  const [queue, setQueue] = useState<TeamEntry[]>([])
-  const [selectedTeamId, setSelectedTeamId] = useState<string>('')
-  const [rubric, setRubric] = useState<RubricItem[]>(initialRubric)
-  const [feedback, setFeedback] = useState('Excellent problem framing and strong prototype validation. Continue to improve clarity in the final presentation narrative.')
+  const initialRecords = useMemo(() => getJudgeRecords(), [])
+  const [queue, setQueue] = useState<JudgeTeamRecord[]>(initialRecords)
+  const [selectedTeamId, setSelectedTeamId] = useState(initialRecords[0]?.id ?? '')
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isSubmitted, setIsSubmitted] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function loadAssignedTeams() {
-      try {
-        setLoading(true)
-
-        const {
-          data: { user },
-          error: userError
-        } = await supabase.auth.getUser()
-
-        if (userError || !user) {
-          setQueue([])
-          setSelectedTeamId('')
-          setLoading(false)
-          return
-        }
-
-        const response = await fetch(
-          `/api/portal?role=judge&userId=${encodeURIComponent(user.id)}&email=${encodeURIComponent(user.email ?? '')}`
-        )
-
-        if (!response.ok) {
-          throw new Error('Failed to load assigned teams')
-        }
-
-        const payload = await response.json()
-
-        const mappedTeams = (payload.teams ?? []).map((team: TeamPayload) => {
-          const scoreRow = Array.isArray(team.judge_scores) && team.judge_scores.length > 0 ? team.judge_scores[0] : null
-          const teamName = team.team_name || team.student_profile?.full_name || 'Student Team'
-          const projectName = team.project_title || team.title || team.team_name || 'Untitled Innovation'
-
-          return {
-            id: String(team.id),
-            code: team.team_code || team.code || `TEAM-${team.id}`,
-            team: teamName,
-            project: projectName,
-            track: team.category || team.track || 'Innovation',
-            status: scoreRow?.status || (scoreRow?.total_score ? 'Scored' : 'Pending Review'),
-            score: scoreRow?.total_score ?? null
-          }
-        })
-
-        setQueue(mappedTeams)
-        setSelectedTeamId(mappedTeams[0]?.id ?? '')
-      } catch (error) {
-        console.error('Judge dashboard load failed:', error)
-        setQueue([])
-        setSelectedTeamId('')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadAssignedTeams()
-  }, [])
 
   const selectedTeam = queue.find((team) => team.id === selectedTeamId) ?? queue[0]
 
-  const totalScore = useMemo(
-    () => rubric.reduce((sum, item) => sum + item.score, 0),
-    [rubric]
-  )
+  const currentTotals = useMemo(() => {
+    if (!selectedTeam) return { total: 0, max: 0 }
+    return getJudgeTotals(selectedTeam.criteria)
+  }, [selectedTeam])
 
-  const maxScore = useMemo(
-    () => rubric.reduce((sum, item) => sum + item.max, 0),
-    [rubric]
-  )
+  const totalScore = Number((currentTotals.total || 0).toFixed(1))
+  const maxScore = currentTotals.max || 0
+  const scoreProgress = maxScore ? Math.min(100, Math.round((totalScore / maxScore) * 100)) : 0
 
-  const scoreProgress = Math.min(100, Math.round((totalScore / maxScore) * 100))
+  const handleScoreChange = (criterionId: string, nextValue: number) => {
+    if (!selectedTeam) return
 
-  const handleScoreChange = (id: string, nextValue: number) => {
-    setRubric((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, score: Math.min(Math.max(nextValue, 0), item.max) }
-          : item
+    const updatedQueue: JudgeTeamRecord[] = queue.map((team) => {
+      if (team.id !== selectedTeam.id) return team
+
+      const updatedCriteria = team.criteria.map((criterion) =>
+        criterion.id === criterionId ? { ...criterion, score: Math.min(Math.max(nextValue, 0), criterion.max) } : criterion
       )
-    )
+
+      const nextTotal = Number(updatedCriteria.reduce((sum, item) => sum + item.score, 0).toFixed(1))
+
+      return {
+        ...team,
+        criteria: updatedCriteria,
+        score: nextTotal,
+        status: 'Draft',
+        updatedAt: new Date().toISOString(),
+      }
+    })
+
+    setQueue(updatedQueue)
+    saveJudgeRecords(updatedQueue)
   }
 
-  const handleOpenRubric = (teamId: string) => {
-    setSelectedTeamId(teamId)
-    setIsModalOpen(true)
-    setIsSubmitted(false)
+  const handleSaveDraft = () => {
+    if (!selectedTeam) return
+
+    const updatedQueue: JudgeTeamRecord[] = queue.map((team) =>
+      team.id === selectedTeam.id
+        ? { ...team, score: Number(team.criteria.reduce((sum, item) => sum + item.score, 0).toFixed(1)), status: 'Draft', updatedAt: new Date().toISOString() }
+        : team
+    )
+
+    setQueue(updatedQueue)
+    saveJudgeRecords(updatedQueue)
   }
 
-  const handleFinalSubmit = () => {
-    setQueue((prev) =>
-      prev.map((item) =>
-        item.id === selectedTeamId
-          ? { ...item, status: 'Scored', score: totalScore }
-          : item
-      )
+  const handleSubmit = () => {
+    if (!selectedTeam) return
+
+    const updatedQueue: JudgeTeamRecord[] = queue.map((team) =>
+      team.id === selectedTeam.id
+        ? { ...team, score: Number(team.criteria.reduce((sum, item) => sum + item.score, 0).toFixed(1)), status: 'Scored', updatedAt: new Date().toISOString() }
+        : team
     )
-    setIsSubmitted(true)
+
+    setQueue(updatedQueue)
+    saveJudgeRecords(updatedQueue)
     setIsModalOpen(false)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex min-h-75 items-center justify-center text-sm text-slate-500">
-        Loading assigned team records from the database...
-      </div>
-    )
   }
 
   return (
@@ -224,14 +139,17 @@ export default function JudgeDashboardPage() {
               const isSelected = selectedTeam?.id === team.id
               const statusClass = team.status === 'Scored'
                 ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
-                : team.status === 'Needs Recheck'
-                  ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
-                  : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+                : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
 
               return (
-                <div
+                <button
                   key={team.id}
-                  className={`rounded-xl border p-4 transition ${isSelected ? (isDarkMode ? 'border-amber-500/60 bg-amber-500/5' : 'border-amber-500/60 bg-amber-50/70') : (isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-[#d8c3ad] bg-[#fffaf6]')}`}
+                  type="button"
+                  onClick={() => {
+                    setSelectedTeamId(team.id)
+                    setIsModalOpen(true)
+                  }}
+                  className={`block w-full rounded-xl border p-4 text-left transition ${isSelected ? (isDarkMode ? 'border-amber-500/60 bg-amber-500/5' : 'border-amber-500/60 bg-amber-50/70') : (isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-[#d8c3ad] bg-[#fffaf6]')}`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
@@ -245,16 +163,12 @@ export default function JudgeDashboardPage() {
 
                     <div className="flex items-center gap-3">
                       <span className={`rounded-md px-2.5 py-1 text-[11px] font-semibold ${statusClass}`}>{team.status}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenRubric(team.id)}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-semibold text-[#0F172A] hover:bg-amber-400 transition"
-                      >
+                      <span className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-semibold text-[#0F172A] hover:bg-amber-400 transition">
                         Open Rubric <i className="fa-solid fa-arrow-right"></i>
-                      </button>
+                      </span>
                     </div>
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>
@@ -273,7 +187,7 @@ export default function JudgeDashboardPage() {
             <div className="text-right">
               <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Current total</div>
               <div className="text-2xl font-extrabold text-amber-500">{totalScore} / {maxScore}</div>
-              {isSubmitted && (
+              {selectedTeam.status === 'Scored' && (
                 <span className="mt-2 inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-600">
                   Finalized
                 </span>
@@ -295,8 +209,14 @@ export default function JudgeDashboardPage() {
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
               <h4 className="text-sm font-bold uppercase tracking-[0.12em] text-amber-600">Qualitative feedback</h4>
               <textarea
-                value={feedback}
-                onChange={(event) => setFeedback(event.target.value)}
+                value={selectedTeam.feedback}
+                onChange={(event) => {
+                  const updatedQueue = queue.map((team) =>
+                    team.id === selectedTeam.id ? { ...team, feedback: event.target.value } : team
+                  )
+                  setQueue(updatedQueue)
+                  saveJudgeRecords(updatedQueue)
+                }}
                 rows={6}
                 className={`mt-3 w-full rounded-xl border p-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-[#d8c3ad] text-[#1f1b1a]'}`}
               />
@@ -335,7 +255,7 @@ export default function JudgeDashboardPage() {
             </div>
 
             <div className="mt-5 space-y-4">
-              {rubric.map((criterion) => (
+              {selectedTeam.criteria.map((criterion) => (
                 <div key={criterion.id} className={`rounded-xl border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-[#d8c3ad] bg-[#fffaf6]'}`}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -366,13 +286,22 @@ export default function JudgeDashboardPage() {
                 <div className="text-2xl font-extrabold text-amber-500">{totalScore} / {maxScore}</div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleFinalSubmit}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-sm font-semibold text-[#0F172A] hover:bg-amber-400 transition"
-              >
-                <i className="fa-solid fa-lock"></i> Lock & Submit Final Score
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-500/40 bg-transparent px-5 py-3 text-sm font-semibold text-amber-600 hover:bg-amber-500/5 transition"
+                >
+                  <i className="fa-solid fa-floppy-disk"></i> Save Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-sm font-semibold text-[#0F172A] hover:bg-amber-400 transition"
+                >
+                  <i className="fa-solid fa-lock"></i> Lock & Submit
+                </button>
+              </div>
             </div>
           </div>
         </div>
