@@ -39,76 +39,37 @@ export default function LoginPage() {
       }
 
       const user = data.session.user
-      const expectedDbRole = roles[activeRole].dbRole
 
-      // 2. Cek apakah profil sudah ada di tabel profiles (mencoba 'id' atau 'uuid')
-      let userRole = null
-
-      const { data: profileById } = await supabase
+      // 2. Ambil data profil ASLI langsung dari tabel profiles berdasarkan ID user
+      const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .maybeSingle()
 
-      if (profileById) {
-        userRole = profileById.role
-      } else {
-        const { data: profileByUuid } = await supabase
+      // Fallback jika primary key tabel profiles menggunakan kolom 'uuid'
+      let userRole = profile?.role
+      if (!userRole) {
+        const { data: profileUuid } = await supabase
           .from('profiles')
           .select('role')
           .eq('uuid', user.id)
           .maybeSingle()
-        if (profileByUuid) {
-          userRole = profileByUuid.role
-        }
+        userRole = profileUuid?.role
       }
 
-      // 3. Jika profil belum ada di database, buatkan secara otomatis
       if (!userRole) {
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert([
-            { 
-              id: user.id, 
-              full_name: email.split('@')[0], 
-              role: expectedDbRole, 
-              institution: 'InnovaSeed Institution' 
-            }
-          ])
-
-        if (insertError) {
-          await supabase
-            .from('profiles')
-            .insert([
-              { 
-                uuid: user.id, 
-                full_name: email.split('@')[0], 
-                role: expectedDbRole, 
-                institution: 'InnovaSeed Institution' 
-              }
-            ])
-        }
-        userRole = expectedDbRole
+        throw new Error('User profile record not found in database.')
       }
 
-      // 4. Ambil ulang role yang valid dari database untuk memastikan tujuan redirect akurat
-      const { data: finalProfile } = await supabase
-        .from('profiles')
-        .select('role')
-        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
-        .single()
-
-      const actualRole = finalProfile?.role || userRole
-
-      // 5. Arahkan otomatis berdasarkan role asli di database (Anti salah kamar!)
-      if (actualRole === 'mentor') {
+      // 3. Arahkan mutlak berdasarkan role di database (Anti salah kamar!)
+      if (userRole === 'mentor') {
         router.push('/mentor')
-      } else if (actualRole === 'judge') {
+      } else if (userRole === 'judge') {
         router.push('/dashboard/judges')
       } else {
         router.push('/dashboard/student')
       }
-
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
       setErrorMessage(message)
@@ -352,7 +313,7 @@ export default function LoginPage() {
             <Link href="mailto:destiandhini62@gmail.com" className="underline text-sm text-slate-700 font-medium">Contact Accelerator Registrar</Link>
           </p>
         </div>
-      </main> 
+      </main>
     </div>
   )
 }
