@@ -27,10 +27,10 @@ export default function PortfolioPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newTagline, setNewTagline] = useState('')
   const [newCategory, setNewCategory] = useState('EdTech & AI')
-  const [newScore, setNewScore] = useState('95.0%')
+  const [newScore, setNewScore] = useState('')
   const [newStatus, setNewStatus] = useState('Prototype Validated')
-  const [newTech, setNewTech] = useState('Next.js, Tailwind, Supabase')
-  const [newAuthor, setNewAuthor] = useState('Desti A.')
+  const [newTech, setNewTech] = useState('')
+  const [newAuthor, setNewAuthor] = useState('')
   const [newDemoUrl, setNewDemoUrl] = useState('')
   
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -286,6 +286,7 @@ export default function PortfolioPage() {
                 <div>
                   <label className="block font-semibold mb-1">Feasibility Score</label>
                   <input 
+                    placeholder="e.g. 95.0%"
                     type="text" 
                     value={newScore} 
                     onChange={(e) => setNewScore(e.target.value)}
@@ -294,7 +295,9 @@ export default function PortfolioPage() {
                 </div>
                 <div>
                   <label className="block font-semibold mb-1">Lead Author / Team</label>
+                  
                   <input 
+                    placeholder="e.g. Bima (Team Lead)"
                     type="text" 
                     value={newAuthor} 
                     onChange={(e) => setNewAuthor(e.target.value)}

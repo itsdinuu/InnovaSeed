@@ -480,7 +480,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                   className={`w-full rounded-xl px-3 py-2.5 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
                 >
                   <option value="National Science Fair Track">National Science Fair Track</option>
-                  <option value="Young Innovator Hub 2025">Young Innovator Hub 2025</option>
+                  <option value="Young Innovator Hub 2026">Young Innovator Hub 2026</option>
                   <option value="AI & Software Engineering Track">AI & Software Engineering Track</option>
                 </select>
               </div>

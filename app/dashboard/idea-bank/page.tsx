@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -22,22 +22,20 @@ export default function IdeaBankPage() {
   const [showModal, setShowModal] = useState(false)
   const [activeTab, setActiveTab] = useState('All Ideas')
   const [searchQuery, setSearchQuery] = useState('')
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
   
-  // State untuk mode Edit
+  // State for Edit mode
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
 
   // Form state
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState('Raw Concept')
   const [tags, setTags] = useState('')
-  const [feasibilityScore, setFeasibilityScore] = useState('7.5')
+  const [feasibilityScore, setFeasibilityScore] = useState('0')
 
-  useEffect(() => {
-    fetchIdeas()
-  }, [])
-
-  async function fetchIdeas() {
+  const fetchIdeas = useCallback(async () => {
     setLoading(true)
     const { data } = await supabase
       .from('ideas')
@@ -48,16 +46,54 @@ export default function IdeaBankPage() {
       setIdeas(data)
     }
     setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadInitialIdeas = async () => {
+      if (isCancelled) return
+      await fetchIdeas()
+    }
+
+    const timeoutId = setTimeout(() => {
+      void loadInitialIdeas()
+    }, 0)
+
+    // --- REALTIME SUBSCRIPTION SUPABASE ---
+    const channel = supabase
+      .channel('realtime-idea-bank-page')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ideas' },
+        () => {
+          void fetchIdeas()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timeoutId)
+      supabase.removeChannel(channel)
+    }
+  }, [fetchIdeas])
+
+  function showToast(message: string) {
+    setToastMessage(message)
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 4000)
   }
 
-  // Fungsi Buka Modal
+  // Open Create Modal
   function handleOpenCreateModal() {
     setEditingId(null)
     setTitle('')
     setDescription('')
     setStatus('Raw Concept')
     setTags('')
-    setFeasibilityScore('7.5')
+    setFeasibilityScore('0')
     setShowModal(true)
   }
 
@@ -67,7 +103,7 @@ export default function IdeaBankPage() {
     setDescription(item.description || '')
     setStatus(item.status || 'Raw Concept')
     setTags(Array.isArray(item.tags) ? item.tags.join(', ') : (item.tags || ''))
-    setFeasibilityScore(item.feasibility_score?.toString() || '7.5')
+    setFeasibilityScore(item.feasibility_score?.toString() || '0')
     setShowModal(true)
   }
 
@@ -92,9 +128,10 @@ export default function IdeaBankPage() {
 
       if (!error) {
         setShowModal(false)
+        showToast('Innovation idea successfully updated!')
         fetchIdeas()
       } else {
-        alert('Failed to update idea: ' + error.message)
+        showToast('Failed to update idea: ' + error.message)
       }
     } else {
       const { data: { session } } = await supabase.auth.getSession()
@@ -116,28 +153,34 @@ export default function IdeaBankPage() {
 
       if (!error) {
         setShowModal(false)
+        showToast('New innovation idea captured successfully!')
         fetchIdeas()
       } else {
-        alert('Failed to save idea: ' + error.message)
+        showToast('Failed to save idea: ' + error.message)
       }
     }
   }
 
-  async function handleDeleteIdea(id: number) {
-    if (!confirm('Are you sure you want to delete this idea?')) return
+function handleDeleteIdea(id: number) {
+  setDeleteConfirmId(id) // Membuka modal konfirmasi custom
+}
+
+  async function executeDelete() {
+    if (!deleteConfirmId) return
 
     const { error } = await supabase
       .from('ideas')
       .delete()
-      .eq('id', id)
+      .eq('id', deleteConfirmId)
 
     if (!error) {
+      showToast('Idea deleted successfully!')
+      setDeleteConfirmId(null)
       fetchIdeas()
     } else {
-      alert('Failed to delete idea: ' + error.message)
+      showToast('Failed to delete idea: ' + error.message)
     }
   }
-
   async function handleVote(item: Idea) {
     const newVotes = (item.votes || 0) + 1
     const { error } = await supabase
@@ -147,10 +190,11 @@ export default function IdeaBankPage() {
 
     if (!error) {
       setIdeas(ideas.map(i => i.id === item.id ? { ...i, votes: newVotes } : i))
+      showToast('Upvote recorded!')
     }
   }
 
-  // Statistik Dinamis
+  // Dynamic Statistics
   const totalIdeasCount = ideas.length
   const underValidationCount = ideas.filter(i => i.status === 'Under Validation').length
   const prototypeCount = ideas.filter(i => i.status === 'Prototype').length
@@ -167,7 +211,7 @@ export default function IdeaBankPage() {
   })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       
       {/* Top Header & Search Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -192,8 +236,10 @@ export default function IdeaBankPage() {
 
       {/* Title & Description */}
       <div>
-        <h1 className="text-2xl font-extrabold">Idea Bank</h1>
-        <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Capture, vote and validate concepts before they become prototypes.</p>
+        <h1 className="text-2xl font-extrabold">Idea Bank 💡</h1>
+        <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+          Capture, vote and validate concepts before they become prototypes.
+        </p>
       </div>
 
       {/* Stats Cards Row */}
@@ -252,7 +298,7 @@ export default function IdeaBankPage() {
           {filteredIdeas.map((item) => (
             <div key={item.id} className={`border rounded-2xl p-6 shadow-xs space-y-4 relative group flex flex-col justify-between transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
               
-              {/* Tombol Edit & Delete di Kanan Atas */}
+              {/* Edit & Delete Buttons */}
               <div className="absolute top-5 right-5 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition">
                 <button 
                   onClick={() => handleOpenEditModal(item)}
@@ -325,7 +371,7 @@ export default function IdeaBankPage() {
             </div>
           ))}
 
-          {/* Kotak CTA "Have a new idea?" */}
+          {/* CTA Box "Have a new idea?" */}
           <div 
             onClick={handleOpenCreateModal}
             className={`border-2 border-dashed rounded-2xl p-6 text-center flex flex-col items-center justify-center cursor-pointer transition space-y-3 group min-h-60 ${isDarkMode ? 'border-amber-500/40 bg-slate-900/50 hover:bg-slate-900' : 'border-amber-300 bg-amber-50/40 hover:bg-amber-50/80'}`}
@@ -342,7 +388,6 @@ export default function IdeaBankPage() {
             <span className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold bg-[#F59E0B] text-[#0F172A] shadow-sm">
               <i className="fa-solid fa-plus"></i> Capture New Idea
             </span>
-
           </div>
 
         </div>
@@ -444,6 +489,54 @@ export default function IdeaBankPage() {
           </div>
         </div>
       )}
+
+      {/* Custom Delete Confirmation Modal (Ganti confirm() browser) */}
+      {deleteConfirmId !== null && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className={`rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-500/10 text-rose-500 grid place-items-center shrink-0">
+                <i className="fa-solid fa-triangle-exclamation"></i>
+              </div>
+              <div>
+                <h3 className="font-bold text-sm">Delete Innovation Idea</h3>
+                <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Are you sure you want to delete this idea? This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button 
+                type="button" 
+                onClick={() => setDeleteConfirmId(null)}
+                className={`px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={executeDelete}
+                className="px-4 py-2 text-xs font-semibold bg-rose-600 text-white rounded-xl hover:bg-rose-700 transition shadow-sm cursor-pointer"
+              >
+                Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-slate-900 text-white border border-slate-700 px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 text-xs">
+          <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 grid place-items-center shrink-0">
+            <i className="fa-solid fa-check text-[10px]"></i>
+          </span>
+          <div>
+            <b className="block text-slate-100 font-bold">InnovaSeed v2 Notification</b>
+            <p className="text-slate-400">{toastMessage}</p>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
