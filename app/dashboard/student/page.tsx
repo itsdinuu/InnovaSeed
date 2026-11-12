@@ -36,6 +36,14 @@ export default function StudentDashboardPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [showDossierModal, setShowDossierModal] = useState(false)
 
+  // Helper untuk memicu toast notification
+  const triggerToast = (message: string) => {
+    setToastMessage(message)
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 4000)
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -64,7 +72,7 @@ export default function StudentDashboardPage() {
               return
             }
           } catch {
-            // Ignore malformed mock session, continue with real auth check
+            // Ignore malformed mock session
           }
         }
 
@@ -96,25 +104,16 @@ export default function StudentDashboardPage() {
           if (meta.team_size) setTeamSize(meta.team_size)
         }
 
-        const currentDate = new Date().toISOString().split('T')[0]
+        // Ambil data log yang sudah ada dari database
+        const { data: logsData, error: logsError } = await supabase
+          .from('research_logs')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('id', { ascending: false })
 
-        const { data, error } = await supabase
-        .from('research_logs')
-        .insert([{
-          user_id: user.id || currentUserId || 'default-user',
-          title: newLogTitle,
-          status: 'Pending Review',
-          date: currentDate
-        }])
-        .select()
-
-      if (error) throw error
-
-      if (data) {
-        // Gabungkan data terbaru dari database ke state
-        setTelemetryLogs([data[0], ...telemetryLogs])
-      }
-      setNewLogTitle('')
+        if (!logsError && logsData && logsData.length > 0) {
+          setTelemetryLogs(logsData)
+        }
 
         const { data: projectDataResult } = await supabase
           .from('projects')
@@ -143,19 +142,20 @@ export default function StudentDashboardPage() {
       cancelled = true
       window.clearTimeout(timeoutId)
     }
-  }, [currentUserId, newLogTitle, telemetryLogs])
+  }, [])
 
-const handleAddLog = async (e: React.FormEvent) => {
+  const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newLogTitle.trim()) return
 
     setSubmitting(true)
     try {
       const currentDate = new Date().toISOString().split('T')[0]
-      
+
       const { data, error } = await supabase
         .from('research_logs')
         .insert([{
+          user_id: currentUserId || 'default-user',
           title: newLogTitle,
           status: 'Pending Review',
           date: currentDate
@@ -165,14 +165,11 @@ const handleAddLog = async (e: React.FormEvent) => {
       if (error) throw error
 
       if (data && data.length > 0) {
-        setTelemetryLogs([data[0], ...telemetryLogs])
+        setTelemetryLogs(prev => [data[0], ...prev])
       }
-      
+
       setNewLogTitle('')
-      
-      // Panggil fungsi showToast di sini supaya garis kuningnya hilang & notifikasinya muncul!
-      showToast("Telemetry log successfully recorded to cloud!")
-      
+      triggerToast('Telemetry log successfully recorded to cloud!')
     } catch (err: unknown) {
       console.error(err)
       
@@ -185,14 +182,12 @@ const handleAddLog = async (e: React.FormEvent) => {
       
       setTelemetryLogs([fallbackEntry, ...telemetryLogs])
       setNewLogTitle('')
-      
-      // Panggil juga di sini kalau mau munculin toast saat fallback
-      showToast("Log added locally (Database sync pending).")
-      
+      triggerToast("Log added locally (Database sync pending).")
     } finally {
       setSubmitting(false)
     }
   }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -385,8 +380,7 @@ const handleAddLog = async (e: React.FormEvent) => {
               <button 
                 onClick={() => {
                   setShowDossierModal(false)
-                  setToastMessage("Research Dossier PDF successfully compiled and downloaded!")
-                  setTimeout(() => setToastMessage(null), 4000)
+                  triggerToast("Research Dossier PDF successfully compiled and downloaded!")
                 }}
                 className="px-5 py-2 text-xs font-semibold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] shadow-sm cursor-pointer transition"
               >
@@ -410,28 +404,4 @@ const handleAddLog = async (e: React.FormEvent) => {
       )}
     </div>
   )
-}
-
-function showToast(message: string) {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return
-
-  const toast = document.createElement('div')
-  toast.className = 'fixed bottom-6 right-6 z-[60] animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs'
-  toast.setAttribute('role', 'status')
-  toast.setAttribute('aria-live', 'polite')
-  toast.innerHTML = `
-    <span class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
-      <i class="fa-solid fa-check"></i>
-    </span>
-    <div>
-      <b class="block text-slate-200">Success</b>
-      <p class="text-slate-400">${message}</p>
-    </div>
-  `
-
-  document.body.appendChild(toast)
-  window.setTimeout(() => {
-    toast.classList.add('opacity-0', 'transition-opacity', 'duration-300')
-    window.setTimeout(() => toast.remove(), 300)
-  }, 4000)
 }
