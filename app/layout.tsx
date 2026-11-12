@@ -1,6 +1,5 @@
 import './globals.css'
-import '@fortawesome/fontawesome-free/css/all.min.css'
-import RouteTransition from '@/components/RouteTransition'
+import '@fortawesome/fontawesome-free/css/all.min.css' // <-- Wajib ada di sini!
 
 export const metadata = {
   title: 'InnovaSeed v2',
@@ -15,7 +14,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-slate-50 text-slate-900 font-sans antialiased">
-        <RouteTransition>{children}</RouteTransition>
+        {children}
       </body>
     </html>
   )

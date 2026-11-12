@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
@@ -21,22 +21,6 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const [isMounted, setIsMounted] = useState(false)
-  const [isTransitioning, setIsTransitioning] = useState(false)
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setIsMounted(true))
-    return () => cancelAnimationFrame(frame)
-  }, [])
-
-  const navigateWithTransition = (target: string) => {
-    if (isTransitioning) return
-
-    setIsTransitioning(true)
-    window.setTimeout(() => {
-      router.push(target)
-    }, 260)
-  }
 
   const steps = [
     ['Create your team account', 'Register with your institutional email.'],
@@ -95,10 +79,7 @@ export default function RegisterPage() {
       }
 
       // 3. Jika sukses, arahkan ke halaman login
-      setIsTransitioning(true)
-      window.setTimeout(() => {
-        router.push('/login')
-      }, 350)
+      router.push('/login')
 
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An error occurred while registering with Supabase.'
@@ -109,9 +90,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className={`page-shell page-shell--register ${isMounted ? 'page-shell--visible' : ''} ${isTransitioning ? 'page-shell--exit' : ''}`}>
-      {isTransitioning && <div className="page-transition-overlay" aria-hidden="true" />}
-      <div className="font-sans text-slate-900 bg-white min-h-screen grid lg:grid-cols-[0.8fr_1.2fr]">
+    <div className="font-sans text-slate-900 bg-white min-h-screen grid lg:grid-cols-[0.8fr_1.2fr]">
       {/* Left Side: Banner / Branding */}
       <aside className="hidden lg:flex flex-col justify-between p-10 text-white bg-linear-to-b from-stone-950 via-stone-900 to-amber-950">
         <div>
@@ -354,16 +333,7 @@ export default function RegisterPage() {
 
           <p className="text-center text-xs text-slate-500 mt-5">
             Already have an InnovaSeed account?<br />
-            <Link
-              href="/login"
-              onClick={(e) => {
-                e.preventDefault()
-                navigateWithTransition('/login')
-              }}
-              className="font-semibold text-amber-700 hover:underline transition-all duration-300"
-            >
-              Sign in
-            </Link>
+            <Link href="/login" className="font-semibold text-amber-700 hover:underline">Sign in</Link>
           </p>
 
           <p className="text-center text-[11px] text-slate-400 mt-4">
@@ -372,7 +342,6 @@ export default function RegisterPage() {
           </p>
         </form>
       </main>
-      </div>
     </div>
   )
 }

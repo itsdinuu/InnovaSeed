@@ -1,7 +1,7 @@
 "use client"
 
 import Image from 'next/image'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
@@ -16,25 +16,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isAnimating, setIsAnimating] = useState(false)
-  const [isMounted, setIsMounted] = useState(false)
-  const [isTransitioning, setIsTransitioning] = useState(false)
-  const [transitionTarget, setTransitionTarget] = useState<string | null>(null)
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setIsMounted(true))
-    return () => cancelAnimationFrame(frame)
-  }, [])
-
-  const navigateWithTransition = (target: string) => {
-    if (isTransitioning) return
-
-    setIsTransitioning(true)
-    setTransitionTarget(target)
-
-    window.setTimeout(() => {
-      router.push(target)
-    }, 260)
-  }
 
   const roleConfig = {
     student: {
@@ -106,22 +87,13 @@ export default function LoginPage() {
         const resolvedRole = (profileData?.role || selectedRole).toLowerCase()
         const targetRoute = resolvedRole === 'mentor' ? '/mentor' : '/dashboard/student'
 
-        setIsTransitioning(true)
-        setTransitionTarget(targetRoute)
-        window.setTimeout(() => {
-          router.push(targetRoute)
-        }, 500)
+        router.push(targetRoute)
         return
       }
 
       if (isDemoLogin) {
         const targetRoute = selectedRole === 'mentor' ? '/mentor' : '/dashboard/student'
-
-        setIsTransitioning(true)
-        setTransitionTarget(targetRoute)
-        window.setTimeout(() => {
-          router.push(targetRoute)
-        }, 500)
+        router.push(targetRoute)
         return
       }
 
@@ -129,12 +101,7 @@ export default function LoginPage() {
     } catch {
       if (isDemoLogin) {
         const targetRoute = selectedRole === 'mentor' ? '/mentor' : '/dashboard/student'
-
-        setIsTransitioning(true)
-        setTransitionTarget(targetRoute)
-        window.setTimeout(() => {
-          router.push(targetRoute)
-        }, 500)
+        router.push(targetRoute)
         return
       }
 
@@ -145,24 +112,15 @@ export default function LoginPage() {
   }
 
   const handleGoogleSSO = async () => {
-    navigateWithTransition(roleConfig[activeRole].link)
+    router.push(roleConfig[activeRole].link)
   }
 
   const handleSchoolSSO = () => {
-    navigateWithTransition(roleConfig[activeRole].link)
+    router.push(roleConfig[activeRole].link)
   }
 
   return (
-    <div className={`page-shell page-shell--login ${isMounted ? 'page-shell--visible' : ''} ${isTransitioning ? 'page-shell--exit' : ''}`}>
-      {isTransitioning && (
-        <div className="page-transition-overlay page-transition-overlay--success" aria-hidden="true">
-          <div className="page-transition-orb" />
-          <div className="page-transition-copy">
-            <span>Accessing workspace</span>
-            <strong>{transitionTarget ? (transitionTarget.includes('/dashboard') ? 'Dashboard' : transitionTarget.includes('/mentor') ? 'Mentor Console' : 'Workspace') : 'Workspace'}</strong>
-          </div>
-        </div>
-      )}
+    <div className="font-sans text-slate-900 bg-white min-h-screen grid lg:grid-cols-[1fr_1.05fr]">
       <aside className="hidden lg:flex flex-col justify-between p-10 text-white bg-linear-to-b from-stone-950 via-stone-900 to-amber-950">
         <div>
           <div className="flex justify-between items-center">
@@ -369,16 +327,7 @@ export default function LoginPage() {
 
           <p className="text-center text-xs text-slate-500 mt-5">Don&apos;t have an InnovaSeed student team account yet?</p>
           <div className="flex flex-wrap justify-center gap-2 mt-2 text-xs font-semibold">
-            <Link
-              href="/register"
-              onClick={(e) => {
-                e.preventDefault()
-                navigateWithTransition('/register')
-              }}
-              className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 transition-all duration-300 hover:-translate-y-0.5"
-            >
-              + Register Innovation Team
-            </Link>
+            <Link href="/register" className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100">+ Register Innovation Team</Link>
           </div>
 
           <p className="text-center text-[11px] text-slate-400 mt-6">
