@@ -38,19 +38,19 @@ export default function RegisterPage() {
     setErrorMessage('')
 
     try {
-      // 1. Register account with Supabase Auth dan kirim metadata tambahan
-      // Metadata ini akan ditangkap oleh Database Trigger untuk otomatis mengisi tabel 'profiles'
+      // 1. Register account with Supabase Auth & kirim metadata khusus siswa
+      // Trigger database akan otomatis menangkap data ini dan memasukkannya ke tabel 'profiles' dengan role 'student'
       const { error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
           data: {
-            full_name: formData.leadName, // Disamakan dengan kolom 'full_name' di tabel profiles
+            full_name: formData.leadName,
             team_name: formData.teamName,
             institution: formData.institution,
             research_field: formData.researchField,
             team_size: formData.teamSize,
-            role: 'student' // Otomatis diset sebagai student saat register via form ini
+            role: 'student' // Ditetapkan otomatis khusus student
           }
         }
       })
@@ -83,7 +83,7 @@ export default function RegisterPage() {
               className="rounded-xl object-cover shadow-sm border border-amber-500/30 bg-amber-500/10"
             />
             <div>
-              <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">v1.0</span></b>
+              <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">v2.0</span></b>
               <p className="text-xs text-slate-400">A Plego Indonesia Product</p>
             </div>
           </div>
@@ -129,7 +129,7 @@ export default function RegisterPage() {
           </div>
           <div className="flex justify-between text-xs text-slate-500 mt-6 pt-4 border-t border-white/10">
             <span><i className="fa-solid fa-lock mr-1"></i> ISO 17025 Research Log</span>
-            <span>© 2026 Plego Indonesia Ecosystem</span>
+            <span>© 2026 Plego Indonesia</span>
           </div>
         </div>
       </aside>
