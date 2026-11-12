@@ -7,15 +7,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { ThemeProvider, useTheme } from '@/context/ThemeContext'
 
-type TeamRealtimePayload = {
-  new?: {
-    team_name?: string
-    lead_name?: string
-    members?: string[]
-    mentor_code?: string
-  }
-}
-
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -54,15 +45,17 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  useEffect(() => {
+useEffect(() => {
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
 
       const user = session.user
+      
+      // Ambil nama langsung dari metadata auth / email kalau profiles belum ada
+      let currentName = user.user_metadata?.lead_name || user.email?.split('@')[0] || 'Innovator'
 
-      // 1. Ambil nama asli dari tabel 'profiles' Supabase terlebih dahulu (Paling Akurat)
-      let activeName = 'Innovator'
+      // Ambil nama asli yang paling akurat dari tabel 'profiles'
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
@@ -70,15 +63,13 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         .maybeSingle()
 
       if (profileData && profileData.full_name) {
-        activeName = profileData.full_name
-      } else if (user?.user_metadata?.lead_name) {
-        activeName = user.user_metadata.lead_name
+        currentName = profileData.full_name
       }
 
-      setUserName(activeName)
-      setFormLeadName(activeName)
+      setUserName(currentName)
+      setFormLeadName(currentName)
 
-      // 2. Ambil data tim dari Supabase
+      // Ambil data tim dari Supabase
       const { data: teamData, error } = await supabase
         .from('teams')
         .select('*')
@@ -96,12 +87,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           setFormMentorCode(teamData.mentor_code)
         }
       } else {
-        // Jika belum ada tim sama sekali, buat otomatis
         const { data: newTeam } = await supabase
           .from('teams')
           .insert([{
             team_name: 'Independent Innovator',
-            lead_name: activeName,
+            lead_name: currentName,
             members: [],
             cohort_batch: 'National Science Fair Track',
             mentor_code: ''
@@ -118,36 +108,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
 
     getDashboardData()
-
-    // --- REALTIME SUBSCRIPTION SUPABASE (WEBSOCKET) ---
-    const realtimeChannel = supabase
-      .channel('realtime-dashboard-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'teams' },
-        (payload: TeamRealtimePayload) => {
-          console.log('Realtime team update:', payload)
-          if (payload.new) {
-            setTeamName((currentTeamName) => payload.new?.team_name ?? currentTeamName)
-            setTeamMembers(payload.new.members || [])
-            if (payload.new.mentor_code !== undefined) {
-              setFormMentorCode(payload.new.mentor_code)
-            }
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mentor_feedback' },
-        () => {
-          fetchUnreadCount()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(realtimeChannel)
-    }
   }, [fetchUnreadCount])
 
   const handleSignOut = async () => {
