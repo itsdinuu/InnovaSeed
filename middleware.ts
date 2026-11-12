@@ -4,18 +4,19 @@ import type { NextRequest } from 'next/server'
 export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
 
-  // Cek apakah user mencoba mengakses jalur /mentor
   if (path.startsWith('/mentor')) {
-    // Ambil semua cookies browser
+    // Ambil semua cookies yang ada di browser saat ini
     const allCookies = request.cookies.getAll()
     
-    // Cek apakah ada cookie milik Supabase (Supabase auth cookies biasanya berawalan 'sb-')
-    const hasSupabaseSession = allCookies.some(cookie => 
-      cookie.name.startsWith('sb-') && cookie.name.endsWith('-auth-token')
+    // Cari apakah ada cookie apa pun yang mengandung kata 'supabase' atau 'auth' atau 'token'
+    const hasAnySession = allCookies.some(cookie => 
+      cookie.name.includes('supabase') || 
+      cookie.name.includes('auth') ||
+      cookie.name.includes('token')
     )
 
-    // Jika tidak ada session cookie / belum login, langsung tendang ke /login
-    if (!hasSupabaseSession) {
+    // Jika sama sekali tidak ada cookie sesi, baru tendang ke /login
+    if (!hasAnySession) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
   }
@@ -23,7 +24,6 @@ export function middleware(request: NextRequest) {
   return NextResponse.next()
 }
 
-// Tentukan rute mana saja yang ingin diproteksi ketat oleh middleware
 export const config = {
   matcher: ['/mentor/:path*'],
 }
