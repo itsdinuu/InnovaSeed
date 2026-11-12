@@ -37,60 +37,102 @@ export default function StudentDashboardPage() {
   const [showDossierModal, setShowDossierModal] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
+
     async function fetchDashboardData() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      try {
+        const mockStorage = localStorage.getItem('innovaseed_mock_session')
+        if (mockStorage) {
+          try {
+            const mockSession = JSON.parse(mockStorage)
+            if (mockSession?.role === 'student' || mockSession?.route === '/dashboard/student') {
+              const name = mockSession.name || 'Student Innovator'
+              if (!cancelled) {
+                setUserName(name)
+                setResearchField('STEM RESEARCH TRACK')
+                setMentorEmail('mentor.maya@innovaseed.sch.id')
+                setInstitution('Plego Indonesia')
+                setTeamSize('3 members')
+                setTelemetryLogs([
+                  { id: 'mock-telemetry-1', title: 'Prototype vibration stress check', status: 'Pending Review', date: '2026-11-12' },
+                  { id: 'mock-telemetry-2', title: 'Thermal efficiency optimization', status: 'Verified', date: '2026-11-11' }
+                ])
+                setProjectData({ title: 'Adaptive Sensor Mesh Prototype', description: 'AI-assisted rapid monitoring system for field deployment.' })
+                setCurrentUserId('mock-student-user')
+                setLoading(false)
+              }
+              return
+            }
+          } catch {
+            // Ignore malformed mock session, continue with real auth check
+          }
+        }
 
-      const user = session.user
-      setCurrentUserId(user.id)
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          if (!cancelled) setLoading(false)
+          return
+        }
 
-      // Sinkronisasi data asli langsung dari tabel 'profiles' Supabase
-      const { data: profileDataResult } = await supabase
-        .from('profiles')
-        .select('*')
-        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
-        .maybeSingle()
+        const user = session.user
+        setCurrentUserId(user.id)
 
-      if (profileDataResult) {
-        if (profileDataResult.full_name) setUserName(profileDataResult.full_name)
-        if (profileDataResult.institution) setInstitution(profileDataResult.institution)
-        if (profileDataResult.role) setResearchField(profileDataResult.role.toUpperCase() + ' TRACK')
-      } else if (user.user_metadata) {
-        const meta = user.user_metadata
-        if (meta.lead_name) setUserName(meta.lead_name)
-        if (meta.research_field) setResearchField(meta.research_field)
-        if (meta.mentor_email) setMentorEmail(meta.mentor_email)
-        if (meta.institution) setInstitution(meta.institution)
-        if (meta.team_size) setTeamSize(meta.team_size)
+        const { data: profileDataResult } = await supabase
+          .from('profiles')
+          .select('*')
+          .or(`id.eq.${user.id},uuid.eq.${user.id}`)
+          .maybeSingle()
+
+        if (profileDataResult) {
+          if (profileDataResult.full_name) setUserName(profileDataResult.full_name)
+          if (profileDataResult.institution) setInstitution(profileDataResult.institution)
+          if (profileDataResult.role) setResearchField(profileDataResult.role.toUpperCase() + ' TRACK')
+        } else if (user.user_metadata) {
+          const meta = user.user_metadata as Record<string, string>
+          if (meta.lead_name) setUserName(meta.lead_name)
+          if (meta.research_field) setResearchField(meta.research_field)
+          if (meta.mentor_email) setMentorEmail(meta.mentor_email)
+          if (meta.institution) setInstitution(meta.institution)
+          if (meta.team_size) setTeamSize(meta.team_size)
+        }
+
+        const { data: logsData, error: logsError } = await supabase
+          .from('research_logs')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+
+        if (!logsError && logsData) {
+          setTelemetryLogs(logsData)
+        }
+
+        const { data: projectDataResult } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('user_id', user.id)
+          .limit(1)
+          .single()
+
+        if (projectDataResult) {
+          setProjectData(projectDataResult)
+        }
+      } catch {
+        if (!cancelled) setLoading(false)
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-
-      // 1. Ambil data real telemetry logs dari tabel Supabase
-      const { data: logsData, error: logsError } = await supabase
-        .from('research_logs')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-
-      if (!logsError && logsData) {
-        setTelemetryLogs(logsData)
-      }
-
-      // 2. Ambil data project dari Supabase
-      const { data: projectDataResult } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', user.id)
-        .limit(1)
-        .single()
-
-      if (projectDataResult) {
-        setProjectData(projectDataResult)
-      }
-
-      setLoading(false)
     }
 
+    const timeoutId = window.setTimeout(() => {
+      if (!cancelled) setLoading(false)
+    }, 400)
+
     fetchDashboardData()
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
   }, [])
 
   // Fungsi untuk menambah log secara real ke database

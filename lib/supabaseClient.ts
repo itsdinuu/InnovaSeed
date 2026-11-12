@@ -2,9 +2,21 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in your .env.local file.')
-}
+const fallbackSupabaseUrl = 'https://placeholder.supabase.co'
+const fallbackSupabaseAnonKey = 'placeholder-anon-key'
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(
+  isSupabaseConfigured ? supabaseUrl! : fallbackSupabaseUrl,
+  isSupabaseConfigured ? supabaseAnonKey! : fallbackSupabaseAnonKey,
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  }
+)
+
+export { isSupabaseConfigured }
