@@ -22,32 +22,51 @@ export default function LoginPage() {
     { icon: 'fa-trophy', title: 'Competition Judge', desc: 'Score qualifying teams and simulate INASEF rubrics.', workspace: 'Judge Portal', link: '/dashboard/judges', dbRole: 'judge' }
   ]
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setErrorMessage('')
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setLoading(true)
+        setErrorMessage('')
 
-    try {
-      // 1. Proses Sign In standar ke Supabase Auth
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+        try {
+          // 1. Proses Sign In dengan Supabase Auth
+          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          })
 
-      if (error || !data.session) {
-        throw new Error(error?.message || 'Login failed. Please check your email and password.')
+          if (authError) throw authError
+
+          const user = authData.user
+          if (!user) throw new Error('No user data returned.')
+
+          // 2. Ambil role user dari tabel 'profiles'
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('role')
+            .or(`id.eq.${user.id},uuid.eq.${user.id}`)
+            .maybeSingle()
+
+          if (profileError) {
+            console.error('Failed to fetch profile:', profileError.message)
+          }
+
+          // Tentukan role (default ke 'student' jika profil belum ada)
+          const userRole = profileData?.role || 'student'
+
+          // 3. Logika Redirect Berdasarkan Role
+          if (userRole === 'mentor') {
+            router.push('/mentor')
+          } else {
+            router.push('/dashboard/student')
+          }
+
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Invalid login credentials. Please try again.'
+          setErrorMessage(message)
+        } finally {
+          setLoading(false)
+        }
       }
-
-      // 2. Langsung lempar ke link rute sesuai tab role yang sedang aktif/dipilih di atas!
-      router.push(roles[activeRole].link)
-
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
-      setErrorMessage(message)
-      setLoading(false)
-    }
-  }
-
   const handleGoogleSSO = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
