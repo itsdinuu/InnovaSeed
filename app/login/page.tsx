@@ -28,7 +28,7 @@ export default function LoginPage() {
     setErrorMessage('')
 
     try {
-      // 1. Proses Sign In ke Supabase Auth
+      // 1. Proses Sign In standar ke Supabase Auth
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -38,72 +38,12 @@ export default function LoginPage() {
         throw new Error(error?.message || 'Login failed. Please check your email and password.')
       }
 
-      const user = data.session.user
-      const expectedDbRole = roles[activeRole].dbRole
+      // 2. Langsung lempar ke link rute sesuai tab role yang sedang aktif/dipilih di atas!
+      router.push(roles[activeRole].link)
 
-      // 2. Cek apakah profil sudah ada di tabel profiles (mencoba kolom 'id' atau 'uuid')
-      let userRole = null
-
-      const { data: profileById } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (profileById) {
-        userRole = profileById.role
-      } else {
-        const { data: profileByUuid } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('uuid', user.id)
-          .maybeSingle()
-        if (profileByUuid) {
-          userRole = profileByUuid.role
-        }
-      }
-
-      // 3. Jika profil sama sekali belum ada di database, buatkan otomatis detik ini juga!
-      if (!userRole) {
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert([
-            { 
-              id: user.id, 
-              full_name: email.split('@')[0], 
-              role: expectedDbRole, 
-              institution: 'InnovaSeed Institution' 
-            }
-          ])
-
-        if (insertError) {
-          await supabase
-            .from('profiles')
-            .insert([
-              { 
-                uuid: user.id, 
-                full_name: email.split('@')[0], 
-                role: expectedDbRole, 
-                institution: 'InnovaSeed Institution' 
-              }
-            ])
-        }
-        userRole = expectedDbRole
-      }
-
-      // 4. Arahkan mutlak berdasarkan role di database (Anti salah kamar!)
-      if (userRole === 'mentor') {
-        router.push('/mentor')
-      } else if (userRole === 'judge') {
-        router.push('/dashboard/judges')
-      } else {
-        router.push('/dashboard/student')
-      }
-      
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
       setErrorMessage(message)
-    } finally {
       setLoading(false)
     }
   }
