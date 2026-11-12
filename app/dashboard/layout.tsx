@@ -56,25 +56,41 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function getDashboardData() {
-      const { data: { session } } = await supabase.auth.getSession()
-      // if (!session) {
-      //   router.push('/login')
-      //   return
-      // }
+      let user: { id: string; email?: string | null; user_metadata?: { lead_name?: string } } | null = null
+      let profileData: { role?: string; full_name?: string; name?: string } | null = null
 
-      // const user = session.user
-      const user = session?.user
-
-      if (!user) {
-        router.push('/login')
-        return
+      const mockStorage = localStorage.getItem('innovaseed_mock_session')
+      if (mockStorage) {
+        const mockSession = JSON.parse(mockStorage)
+        if (mockSession?.role === 'student') {
+          user = {
+            id: 'mock-student-user',
+            email: mockSession.email,
+            user_metadata: { lead_name: mockSession.name || 'Student Innovator' }
+          }
+          profileData = { role: 'student', full_name: mockSession.name || 'Student Innovator' }
+        }
       }
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('role, full_name, name')
-        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
-        .maybeSingle()
+      if (!user) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          router.push('/login')
+          return
+        }
+
+        user = session.user
+      }
+
+      if (!profileData && user) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('role, full_name, name')
+          .or(`id.eq.${user.id},uuid.eq.${user.id}`)
+          .maybeSingle()
+
+        profileData = data
+      }
 
       if (profileData?.role && profileData.role !== 'student') {
         router.push(profileData.role === 'mentor' ? '/mentor' : '/dashboard')

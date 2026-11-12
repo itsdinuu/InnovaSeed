@@ -64,10 +64,20 @@ export default function LoginPage() {
     setErrorMessage('')
 
     const selectedConfig = roleConfig[activeRole]
+    const mockSession = {
+      role: activeRole,
+      email: selectedConfig.demoEmail,
+      name: selectedConfig.title,
+      route: selectedConfig.link,
+      timestamp: Date.now()
+    }
+
+    localStorage.setItem('innovaseed_mock_session', JSON.stringify(mockSession))
 
     setEmail(selectedConfig.demoEmail)
     setPassword(selectedConfig.demoPass)
-    router.push(selectedConfig.link)
+    router.replace(selectedConfig.link)
+    setLoading(false)
   }
 
   const handleGoogleSSO = async () => {
