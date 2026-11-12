@@ -42,6 +42,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const { isDarkMode, toggleDarkMode } = useTheme()
+  const isJudgeArea = pathname?.startsWith('/dashboard/judges') ?? false
 
   const fetchUnreadCount = useCallback(async () => {
     const { count, error } = await supabase
@@ -291,45 +292,78 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           />
           <div>
             <b className="text-[15px]">InnovaSeed <span className="text-[#F59E0B]">v2</span></b>
-            <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Young Innovator Hub 2026</p>
+            <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+              {isJudgeArea ? 'Grand Jury Console' : 'Young Innovator Hub 2026'}
+            </p>
           </div>
         </div>
-        
-        <Link href="/dashboard/idea-bank" className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] w-full mb-5 shadow-sm">
-          + New Innovation
-        </Link>
+
+        {isJudgeArea ? (
+          <div className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+            <div className="flex items-center gap-2 font-bold uppercase tracking-[0.14em] text-[10px]">
+              <i className="fa-solid fa-scale-balanced"></i> Evaluator Access
+            </div>
+            <div className="mt-2 font-semibold">Panel #4 • Final Judging</div>
+          </div>
+        ) : (
+          <Link href="/dashboard/idea-bank" className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] w-full mb-5 shadow-sm">
+            + New Innovation
+          </Link>
+        )}
 
         {/* Navigation Menu */}
         <nav className="space-y-1 text-sm">
-          <Link href="/dashboard/student" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/student' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
-            <i className="fa-solid fa-table-cells-large w-4 text-center"></i>Dashboard
-          </Link>
-          <Link href="/dashboard/idea-bank" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/idea-bank') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
-            <i className="fa-solid fa-lightbulb w-4 text-center"></i>Idea Bank
-          </Link>
-          <Link href="/dashboard/workspace" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/workspace') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
-            <i className="fa-solid fa-folder-open w-4 text-center"></i>Project Workspace
-          </Link>
-          <Link href="/dashboard/notes" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/notes') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
-            <i className="fa-solid fa-pen-to-square w-4 text-center"></i>Prototype Notes
-          </Link>
-          <Link href="/dashboard/competition-prep" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/competition-prep') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
-            <i className="fa-solid fa-clipboard-check w-4 text-center"></i>Competition Prep
-          </Link>
-          <Link href="/dashboard/mentor-feedback" className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/mentor-feedback') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
-            <div className="flex items-center gap-3">
-              <i className="fa-solid fa-comments w-4 text-center"></i>
-              <span>Mentor Feedback</span>
-            </div>
-            {unreadCount > 0 && (
-              <span className="bg-[#F59E0B] text-[#0F172A] text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 animate-pulse">
-                {unreadCount} New
-              </span>
-            )}
-          </Link>
-          <Link href="/dashboard/portfolio" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/portfolio') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
-             <i className="fa-solid fa-folder-closed w-4 text-center"></i>Portfolio Showcase
-          </Link>
+          {isJudgeArea ? (
+            <>
+              <Link href="/dashboard/judges/queue" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/judges/queue' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-clipboard-list w-4 text-center"></i>Assigned Evaluation Queue
+              </Link>
+              <Link href="/dashboard/judges/rubrics" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/judges/rubrics' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-file-lines w-4 text-center"></i>Scoring Rubrics &amp; Guidelines
+              </Link>
+              <Link href="/dashboard/judges/completed" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/judges/completed' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-check-double w-4 text-center"></i>Completed Evaluations
+              </Link>
+              <Link href="/dashboard/judges/leaderboard" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/judges/leaderboard' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-ranking-star w-4 text-center"></i>Grand Finalist Leaderboard
+              </Link>
+              <Link href="/dashboard/judges/profile" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/judges/profile' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-user-shield w-4 text-center"></i>Evaluator Profile &amp; Credentials
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/dashboard/student" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/student' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-table-cells-large w-4 text-center"></i>Dashboard
+              </Link>
+              <Link href="/dashboard/idea-bank" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/idea-bank') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-lightbulb w-4 text-center"></i>Idea Bank
+              </Link>
+              <Link href="/dashboard/workspace" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/workspace') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-folder-open w-4 text-center"></i>Project Workspace
+              </Link>
+              <Link href="/dashboard/notes" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/notes') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-pen-to-square w-4 text-center"></i>Prototype Notes
+              </Link>
+              <Link href="/dashboard/competition-prep" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/competition-prep') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <i className="fa-solid fa-clipboard-check w-4 text-center"></i>Competition Prep
+              </Link>
+              <Link href="/dashboard/mentor-feedback" className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/mentor-feedback') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                <div className="flex items-center gap-3">
+                  <i className="fa-solid fa-comments w-4 text-center"></i>
+                  <span>Mentor Feedback</span>
+                </div>
+                {unreadCount > 0 && (
+                  <span className="bg-[#F59E0B] text-[#0F172A] text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 animate-pulse">
+                    {unreadCount} New
+                  </span>
+                )}
+              </Link>
+              <Link href="/dashboard/portfolio" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/portfolio') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
+                 <i className="fa-solid fa-folder-closed w-4 text-center"></i>Portfolio Showcase
+              </Link>
+            </>
+          )}
         </nav>
 
         {/* Bottom Section: Team Info Card with Realtime Online Status Hover Popup */}
@@ -445,16 +479,18 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
           <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-[#FEF3C7] border-[#F59E0B]/30 text-[#613b00]'}`}>
             <span className="w-5 h-5 rounded-md bg-[#F59E0B] text-white grid place-items-center text-[10px]">
-              <i className="fa-solid fa-star"></i>
+              <i className={`fa-solid ${isJudgeArea ? 'fa-scale-balanced' : 'fa-star'}`}></i>
             </span>
-            <span className="truncate max-w-60">{teamName} &bull; {competitionTrack}</span>
+            <span className="truncate max-w-60">
+              {isJudgeArea ? 'Grand Jury Panel • Final Evaluator' : `${teamName} • ${competitionTrack}`}
+            </span>
             <i className="fa-solid fa-chevron-down text-[10px] opacity-60 ml-1"></i>
           </div>
 
           <div className="flex items-center gap-2.5 ml-auto">
             <span className="hidden sm:inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold bg-[#FEF3C7] border border-[#F59E0B]/30 text-[#613b00] shadow-2xs">
               <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse"></span>
-              Sprint Active
+              {isJudgeArea ? 'Judging Active' : 'Sprint Active'}
             </span>
 
             <button 
