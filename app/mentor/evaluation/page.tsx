@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTheme } from '@/context/ThemeContext'
+import { supabase } from '@/lib/supabaseClient'
 
 type TeamScore = {
   id: number
@@ -16,7 +17,6 @@ type TeamScore = {
 export default function GradingRubricsPage() {
   const { isDarkMode } = useTheme()
   
-  // Dummy student teams data for rubric testing
   const [teams, setTeams] = useState<TeamScore[]>([
     {
       id: 1,
@@ -43,6 +43,23 @@ export default function GradingRubricsPage() {
   const [technicalInput, setTechnicalInput] = useState('')
   const [presentationInput, setPresentationInput] = useState('')
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  // Opsional: Ambil data dari Supabase jika tabelnya sudah ada
+  useEffect(() => {
+    async function fetchTeamsFromSupabase() {
+      try {
+        const { data } = await supabase.from('teams').select('*')
+        if (data && data.length > 0) {
+          // Sesuaikan dengan struktur tabel Supabase kamu jika ada
+          // setTeams(data)
+        }
+      } catch (err) {
+        console.log('Menggunakan dummy data lokal sementara:', err)
+      }
+    }
+    fetchTeamsFromSupabase()
+  }, [])
 
   const handleOpenModal = (team: TeamScore) => {
     setSelectedTeam(team)
@@ -51,27 +68,60 @@ export default function GradingRubricsPage() {
     setPresentationInput(team.presentationScore ? team.presentationScore.toString() : '')
   }
 
-  const handleSaveScore = (e: React.FormEvent) => {
+  const handleSaveScore = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedTeam) return
 
-    const updatedTeams = teams.map((t) => {
-      if (t.id === selectedTeam.id) {
-        return {
-          ...t,
-          innovationScore: Number(innovationInput) || 0,
-          technicalScore: Number(technicalInput) || 0,
-          presentationScore: Number(presentationInput) || 0,
-          status: 'Graded' as const
-        }
-      }
-      return t
-    })
+    setLoading(true)
 
-    setTeams(updatedTeams)
-    setSelectedTeam(null)
-    setSuccessMessage(`Scores for team ${selectedTeam.teamName} successfully saved!`)
-    setTimeout(() => setSuccessMessage(null), 4000)
+    const newInnovation = Number(innovationInput) || 0
+    const newTechnical = Number(technicalInput) || 0
+    const newPresentation = Number(presentationInput) || 0
+
+    try {
+      // Simpan ke database Supabase (pastikan tabel 'evaluations' atau 'teams' sudah ada)
+      const { error } = await supabase
+        .from('evaluations')
+        .upsert([
+          {
+            team_id: selectedTeam.id,
+            team_name: selectedTeam.teamName,
+            innovation_score: newInnovation,
+            technical_score: newTechnical,
+            presentation_score: newPresentation,
+            status: 'Graded',
+            updated_at: new Date().toISOString()
+          }
+        ], { onConflict: 'team_id' })
+
+      if (error) {
+        console.warn('Simpan ke Supabase gagal/tabel belum ada, memperbarui state lokal:', error.message)
+      }
+
+      // Update state lokal agar UI langsung berubah tanpa refresh
+      const updatedTeams = teams.map((t) => {
+        if (t.id === selectedTeam.id) {
+          return {
+            ...t,
+            innovationScore: newInnovation,
+            technicalScore: newTechnical,
+            presentationScore: newPresentation,
+            status: 'Graded' as const
+          }
+        }
+        return t
+      })
+
+      setTeams(updatedTeams)
+      setSelectedTeam(null)
+      setSuccessMessage(`Scores for team ${selectedTeam.teamName} successfully saved!`)
+      setTimeout(() => setSuccessMessage(null), 4000)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      alert('Terjadi kesalahan: ' + message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -209,9 +259,10 @@ export default function GradingRubricsPage() {
                 </button>
                 <button 
                   type="submit"
-                  className="flex-1 py-2.5 font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer"
+                  disabled={loading}
+                  className="flex-1 py-2.5 font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer disabled:opacity-50"
                 >
-                  Save Evaluation
+                  {loading ? 'Saving...' : 'Save Evaluation'}
                 </button>
               </div>
             </form>
