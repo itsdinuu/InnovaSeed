@@ -19,7 +19,7 @@ type TeamRealtimePayload = {
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [userName, setUserName] = useState('Bayu')
+  const [userName, setUserName] = useState('Innovator')
   const [teamName, setTeamName] = useState('Independent Innovator')
   const [competitionTrack, setCompetitionTrack] = useState('National Science Fair Track')
   const [unreadCount, setUnreadCount] = useState(0)
@@ -27,7 +27,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   // State untuk Modal Settings & Team Management (Termasuk Mentor Code)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [formTeamName, setFormTeamName] = useState('Independent Innovator')
-  const [formLeadName, setFormLeadName] = useState('Bayu')
+  const [formLeadName, setFormLeadName] = useState('Innovator')
   const [formTrack, setFormTrack] = useState('National Science Fair Track')
   const [formMentorCode, setFormMentorCode] = useState('')
   
@@ -57,14 +57,23 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
-      const defaultLeadName = session?.user?.user_metadata?.lead_name ?? 'Bayu'
+      if (!session) return
 
-      if (session?.user?.user_metadata) {
-        const metadata = session.user.user_metadata
-        if (metadata?.lead_name) {
-          setUserName(metadata.lead_name)
-          setFormLeadName(metadata.lead_name)
-        }
+      const user = session.user
+
+      // Ambil nama asli dari tabel 'profiles' Supabase
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
+        .maybeSingle()
+
+      if (profileData && profileData.full_name) {
+        setUserName(profileData.full_name)
+        setFormLeadName(profileData.full_name)
+      } else if (user?.user_metadata?.lead_name) {
+        setUserName(user.user_metadata.lead_name)
+        setFormLeadName(user.user_metadata.lead_name)
       }
 
       // Ambil data tim dari Supabase
@@ -78,7 +87,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         setTeamRecordId(teamData.id)
         setTeamName(teamData.team_name)
         setFormTeamName(teamData.team_name)
-        if (teamData.lead_name) {
+        if (teamData.lead_name && !profileData?.full_name) {
           setUserName(teamData.lead_name)
           setFormLeadName(teamData.lead_name)
         }
@@ -90,11 +99,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         }
       } else {
         // Jika belum ada tim sama sekali, buat otomatis sebagai Lead
+        const defaultName = profileData?.full_name || user?.user_metadata?.lead_name || 'Innovator'
         const { data: newTeam } = await supabase
           .from('teams')
           .insert([{
             team_name: 'Independent Innovator',
-            lead_name: defaultLeadName,
+            lead_name: defaultName,
             members: [],
             cohort_batch: 'National Science Fair Track',
             mentor_code: ''
@@ -122,7 +132,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           console.log('Realtime team update:', payload)
           if (payload.new) {
             setTeamName((currentTeamName) => payload.new?.team_name ?? currentTeamName)
-            setUserName((currentUserName) => payload.new?.lead_name ?? currentUserName)
+            if (payload.new?.lead_name) {
+              setUserName(payload.new.lead_name)
+            }
             setTeamMembers(payload.new.members || [])
             if (payload.new.mentor_code !== undefined) {
               setFormMentorCode(payload.new.mentor_code)
