@@ -6,14 +6,15 @@ export function middleware(request: NextRequest) {
 
   // Cek apakah user mencoba mengakses jalur /mentor
   if (path.startsWith('/mentor')) {
-    // Ambil token / session cookies dari Supabase
-    // Supabase Auth secara otomatis menyimpan token di cookies browser
+    // Ambil semua cookies browser
     const allCookies = request.cookies.getAll()
+    
+    // Cek apakah ada cookie milik Supabase (Supabase auth cookies biasanya berawalan 'sb-')
     const hasSupabaseSession = allCookies.some(cookie => 
-      cookie.name.includes('auth-token') || cookie.name.includes('supabase')
+      cookie.name.startsWith('sb-') && cookie.name.endsWith('-auth-token')
     )
 
-    // Jika tidak ada session / belum login, langsung tendang ke /login
+    // Jika tidak ada session cookie / belum login, langsung tendang ke /login
     if (!hasSupabaseSession) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
