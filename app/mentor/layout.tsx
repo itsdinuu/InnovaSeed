@@ -5,17 +5,63 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { ThemeProvider, useTheme } from '@/context/ThemeContext'
+import { useEffect, useState } from 'react'
 
 function MentorDashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const mentorName = 'Dr. Maya (Faculty Lead)'
+  const [mentorName, setMentorName] = useState('Faculty Lead')
+  const [loading, setLoading] = useState(true)
 
   const { isDarkMode, toggleDarkMode } = useTheme()
+
+  useEffect(() => {
+    async function checkMentorAuth() {
+      // 1. Cek apakah user sudah login
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        router.push('/login')
+        return
+      }
+
+      // 2. Cek role mentor dari tabel profiles / users di database
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('name, role')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || !profile || profile.role !== 'mentor') {
+        // Jika bukan mentor, alihkan ke dashboard umum atau halaman utama
+        router.push('/dashboard')
+        return
+      }
+
+      // Set nama mentor dari database jika ada
+      if (profile.name) {
+        setMentorName(profile.name)
+      }
+      setLoading(false)
+    }
+
+    checkMentorAuth()
+  }, [router])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  // Tampilkan loading sebentar saat mengecek autentikasi dan role
+  if (loading) {
+    return (
+      <div className={`flex min-h-screen items-center justify-center ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#fff8f4] text-[#221a12]'}`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm font-medium">Verifying faculty access...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -86,7 +132,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
             <i className="fa-solid fa-trophy w-4 text-center"></i>Competition Control
           </Link>
 
-            <Link 
+          <Link 
             href="/mentor/teams" 
             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${
               pathname?.includes('/teams') 
