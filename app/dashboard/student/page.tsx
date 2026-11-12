@@ -28,7 +28,7 @@ export default function StudentDashboardPage() {
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   
-  // State untuk menyimpan data real dari Supabase
+  // State data real & interaksi
   const [telemetryLogs, setTelemetryLogs] = useState<TelemetryLog[]>([])
   const [newLogTitle, setNewLogTitle] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -36,7 +36,7 @@ export default function StudentDashboardPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [showDossierModal, setShowDossierModal] = useState(false)
 
-  // Helper untuk memicu toast notification
+  // Helper Toast Notification
   const triggerToast = (message: string) => {
     setToastMessage(message)
     setTimeout(() => {
@@ -49,15 +49,16 @@ export default function StudentDashboardPage() {
 
     async function fetchDashboardData() {
       try {
+        // 1. Cek Mock Session localStorage (Bypass login otomatis untuk testing lokal)
         const mockStorage = localStorage.getItem('innovaseed_mock_session')
         if (mockStorage) {
           try {
             const mockSession = JSON.parse(mockStorage)
             if (mockSession?.role === 'student' || mockSession?.route === '/dashboard/student') {
-              const name = mockSession.name || 'Student Innovator'
+              const name = mockSession.name || 'Desti Andhini'
               if (!cancelled) {
                 setUserName(name)
-                setResearchField('STEM RESEARCH TRACK')
+                setResearchField('SOFTWARE ENGINEERING TRACK')
                 setMentorEmail('mentor.maya@innovaseed.sch.id')
                 setInstitution('Plego Indonesia')
                 setTeamSize('3 members')
@@ -65,26 +66,49 @@ export default function StudentDashboardPage() {
                   { id: 'mock-telemetry-1', title: 'Prototype vibration stress check', status: 'Pending Review', date: '2026-11-12' },
                   { id: 'mock-telemetry-2', title: 'Thermal efficiency optimization', status: 'Verified', date: '2026-11-11' }
                 ])
-                setProjectData({ title: 'Adaptive Sensor Mesh Prototype', description: 'AI-assisted rapid monitoring system for field deployment.' })
+                setProjectData({ title: 'Young Innovator LMS (InnovaSeed v2)', description: 'Full-stack educational platform built with Next.js, Supabase & Tailwind.' })
                 setCurrentUserId('mock-student-user')
                 setLoading(false)
               }
               return
             }
           } catch {
-            // Ignore malformed mock session
+            // Abaikan jika format JSON rusak
           }
         }
 
+        // 2. Jika tidak ada mock, cek Auth Supabase Asli
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) {
-          if (!cancelled) setLoading(false)
+          // Jika belum login sama sekali, set otomatis mock session agar halaman tetap bisa dibuka di localhost
+          const defaultMock = {
+            role: 'student',
+            name: 'Desti Andhini',
+            route: '/dashboard/student'
+          }
+          localStorage.setItem('innovaseed_mock_session', JSON.stringify(defaultMock))
+          
+          if (!cancelled) {
+            setUserName('Desti Andhini')
+            setResearchField('SOFTWARE ENGINEERING TRACK')
+            setMentorEmail('mentor.maya@innovaseed.sch.id')
+            setInstitution('Plego Indonesia')
+            setTeamSize('3 members')
+            setTelemetryLogs([
+              { id: 'mock-telemetry-1', title: 'Prototype vibration stress check', status: 'Pending Review', date: '2026-11-12' },
+              { id: 'mock-telemetry-2', title: 'Thermal efficiency optimization', status: 'Verified', date: '2026-11-11' }
+            ])
+            setProjectData({ title: 'Young Innovator LMS (InnovaSeed v2)', description: 'Full-stack educational platform built with Next.js, Supabase & Tailwind.' })
+            setCurrentUserId('mock-student-user')
+            setLoading(false)
+          }
           return
         }
 
         const user = session.user
         setCurrentUserId(user.id)
 
+        // Ambil data profil dari database Supabase
         const { data: profileDataResult } = await supabase
           .from('profiles')
           .select('*')
@@ -95,16 +119,9 @@ export default function StudentDashboardPage() {
           if (profileDataResult.full_name) setUserName(profileDataResult.full_name)
           if (profileDataResult.institution) setInstitution(profileDataResult.institution)
           if (profileDataResult.role) setResearchField(profileDataResult.role.toUpperCase() + ' TRACK')
-        } else if (user.user_metadata) {
-          const meta = user.user_metadata as Record<string, string>
-          if (meta.lead_name) setUserName(meta.lead_name)
-          if (meta.research_field) setResearchField(meta.research_field)
-          if (meta.mentor_email) setMentorEmail(meta.mentor_email)
-          if (meta.institution) setInstitution(meta.institution)
-          if (meta.team_size) setTeamSize(meta.team_size)
         }
 
-        // Ambil data log yang sudah ada dari database
+        // Ambil data research logs dari database
         const { data: logsData, error: logsError } = await supabase
           .from('research_logs')
           .select('*')
@@ -115,12 +132,13 @@ export default function StudentDashboardPage() {
           setTelemetryLogs(logsData)
         }
 
+        // Ambil data projects dari database
         const { data: projectDataResult } = await supabase
           .from('projects')
           .select('*')
           .eq('user_id', user.id)
           .limit(1)
-          .single()
+          .maybeSingle()
 
         if (projectDataResult) {
           setProjectData(projectDataResult)
@@ -155,7 +173,7 @@ export default function StudentDashboardPage() {
       const { data, error } = await supabase
         .from('research_logs')
         .insert([{
-          user_id: currentUserId || 'default-user',
+          user_id: currentUserId || 'mock-student-user',
           title: newLogTitle,
           status: 'Pending Review',
           date: currentDate
