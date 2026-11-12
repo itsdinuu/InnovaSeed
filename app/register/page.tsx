@@ -40,7 +40,7 @@ export default function RegisterPage() {
     try {
       // 1. Register account with Supabase Auth & kirim metadata khusus siswa
       // Trigger database akan otomatis menangkap data ini dan memasukkannya ke tabel 'profiles' dengan role 'student'
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
@@ -50,35 +50,15 @@ export default function RegisterPage() {
             institution: formData.institution,
             research_field: formData.researchField,
             team_size: formData.teamSize,
-            role: 'student'
+            role: 'student' // Ditetapkan otomatis khusus student
           }
         }
       })
 
-      if (authError) throw authError
+      if (error) throw error
 
-      const user = authData.user
-      if (user) {
-        // 2. Pastikan data juga langsung masuk ke tabel 'profiles' secara aman
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .upsert([
-            {
-              id: user.id,
-              email: user.email,
-              full_name: formData.leadName,
-              institution: formData.institution,
-              role: 'student',
-              created_at: new Date().toISOString()
-            }
-          ])
-
-        if (profileError) {
-          console.error('Gagal menyimpan ke tabel profiles:', profileError.message)
-        }
-      }
-
-      // 3. Jika sukses, arahkan ke halaman login
+      // 2. Jika sukses, arahkan ke halaman login
+      alert('Team account registration successful! Your profile has been automatically created. Please sign in.')
       router.push('/login')
 
     } catch (err: unknown) {
@@ -287,7 +267,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600"
                 >
                   <i className={`fa-regular ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
                 </button>
@@ -326,7 +306,7 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 mt-4 cursor-pointer"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 mt-4"
           >
             {loading ? 'Creating Account...' : 'Create Team Account →'}
           </button>

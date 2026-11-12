@@ -8,115 +8,63 @@ import Link from 'next/link'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [activeRole, setActiveRole] = useState<'student' | 'mentor'>('student')
-  const [email, setEmail] = useState('student.lead@innovaseed.sch.id')
-  const [password, setPassword] = useState('studentpass123')
+  const [activeRole, setActiveRole] = useState(0) // 0: Student, 1: Mentor, 2: Judge
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const [isAnimating, setIsAnimating] = useState(false)
 
-  const roleConfig = {
-    student: {
-      key: 'student',
-      icon: 'fa-graduation-cap',
-      title: 'Student',
-      desc: 'Access the student dashboard and research workspace.',
-      workspace: 'Student Dashboard',
-      link: '/dashboard/student',
-      demoEmail: 'student.lead@innovaseed.sch.id',
-      demoPass: 'studentpass123'
-    },
-    mentor: {
-      key: 'mentor',
-      icon: 'fa-user-tie',
-      title: 'Mentor',
-      desc: 'Review teams, mentor feedback, and guidance workflows.',
-      workspace: 'Mentor Dashboard',
-      link: '/mentor',
-      demoEmail: 'mentor.maya@innovaseed.sch.id',
-      demoPass: 'mentorpass123'
-    }
-  } as const
-
-  const roles = [roleConfig.student, roleConfig.mentor]
-
-  const handleRoleSelect = (role: 'student' | 'mentor') => {
-    setIsAnimating(true)
-    setActiveRole(role)
-    setEmail(roleConfig[role].demoEmail)
-    setPassword(roleConfig[role].demoPass)
-
-    setTimeout(() => {
-      setIsAnimating(false)
-    }, 300)
-  }
+  const roles = [
+    { icon: 'fa-graduation-cap', title: 'Student Innovator', desc: 'Log trials, update notebooks, and submit prototypes.', workspace: 'Student Workspace', link: '/dashboard/student', dbRole: 'student' },
+    { icon: 'fa-user-tie', title: 'Faculty & Mentor', desc: 'Review telemetry, sign-offs, and ethical clearances.', workspace: 'Mentor Console', link: '/mentor', dbRole: 'mentor' },
+    { icon: 'fa-trophy', title: 'Competition Judge', desc: 'Score qualifying teams and simulate INASEF rubrics.', workspace: 'Judge Portal', link: '/dashboard/judges', dbRole: 'judge' }
+  ]
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setErrorMessage('')
 
-    const selectedRole = activeRole
-    const selectedConfig = roleConfig[selectedRole]
-
-    const isDemoLogin =
-      email.trim().toLowerCase() === selectedConfig.demoEmail.toLowerCase() &&
-      password === selectedConfig.demoPass
-
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+      // 1. Proses Sign In standar ke Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
         password,
       })
 
-      if (authError && !isDemoLogin) {
-        console.warn('Supabase auth failed, trying demo fallback:', authError.message)
+      if (error || !data.session) {
+        throw new Error(error?.message || 'Login failed. Please check your email and password.')
       }
 
-      const user = authData?.user
+      // 2. Langsung lempar ke link rute sesuai tab role yang sedang aktif/dipilih di atas!
+      router.push(roles[activeRole].link)
 
-      if (user) {
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('role')
-          .or(`id.eq.${user.id},uuid.eq.${user.id}`)
-          .maybeSingle()
-
-        const resolvedRole = (profileData?.role || selectedRole).toLowerCase()
-        const targetRoute = resolvedRole === 'mentor' ? '/mentor' : '/dashboard/student'
-
-        router.push(targetRoute)
-        return
-      }
-
-      if (isDemoLogin) {
-        const targetRoute = selectedRole === 'mentor' ? '/mentor' : '/dashboard/student'
-        router.push(targetRoute)
-        return
-      }
-
-      setErrorMessage('Incorrect email or password. Please use the correct demo credentials or check the database record.')
-    } catch {
-      if (isDemoLogin) {
-        const targetRoute = selectedRole === 'mentor' ? '/mentor' : '/dashboard/student'
-        router.push(targetRoute)
-        return
-      }
-
-      setErrorMessage('Login failed. Please check your account and role selection.')
-    } finally {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Login failed. Please try again.'
+      setErrorMessage(message)
       setLoading(false)
     }
   }
 
   const handleGoogleSSO = async () => {
-    router.push(roleConfig[activeRole].link)
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}${roles[activeRole].link}`
+        }
+      })
+      if (error) throw error
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Google SSO login failed.'
+      setErrorMessage(message)
+    }
   }
 
   const handleSchoolSSO = () => {
-    router.push(roleConfig[activeRole].link)
+    alert('School SSO integration (SIAKAD / School Portal) is processing.')
   }
 
   return (
@@ -204,19 +152,19 @@ export default function LoginPage() {
 
           <p className="text-xs font-semibold mt-6 mb-2">Select Account Authorization Role <span className="text-red-500">*</span></p>
           
-          <div className="grid sm:grid-cols-2 gap-3">
-            {roles.map((r) => (
+          <div className="grid sm:grid-cols-3 gap-3">
+            {roles.map((r, n) => (
               <button
-                key={r.key}
+                key={n}
                 type="button"
-                onClick={() => handleRoleSelect(r.key as 'student' | 'mentor')}
-                className={`text-left rounded-xl border p-3 relative transition-all duration-200 cursor-pointer ${activeRole === r.key ? 'border-amber-500 bg-amber-50/70 shadow-xs ring-2 ring-amber-500/20' : 'border-slate-200 hover:bg-slate-50'}`}
+                onClick={() => setActiveRole(n)}
+                className={`text-left rounded-xl border p-3 relative transition cursor-pointer ${n === activeRole ? 'border-amber-500 bg-amber-50/50' : 'border-slate-200 hover:bg-slate-50'}`}
               >
                 <span className="w-7 h-7 rounded-md bg-amber-100 text-amber-600 grid place-items-center text-xs">
                   <i className={`fa-solid ${r.icon}`}></i>
                 </span>
-                {activeRole === r.key && (
-                  <span className="absolute top-2 right-2 text-[10px] font-semibold border border-amber-600 bg-amber-500 text-white rounded px-1.5 py-0.2 animate-pulse">Active</span>
+                {n === activeRole && (
+                  <span className="absolute top-2 right-2 text-[10px] font-semibold border border-slate-800 bg-white rounded px-1.5 py-0.2">Active</span>
                 )}
                 <b className="block text-xs mt-2">{r.title}</b>
                 <span className="text-[11px] text-slate-500 leading-snug block mt-1">{r.desc}</span>
@@ -258,7 +206,7 @@ export default function LoginPage() {
           <form onSubmit={handleLogin}>
             <div className="flex justify-between">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">Institutional Email</label>
-              <span className="text-[11px] text-amber-600 font-medium">✨ Auto-filled for Demo</span>
+              <span className="text-[11px] text-slate-400">e.g., mentor@innovaseed.sch.id</span>
             </div>
             <div className="relative mb-4">
               <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
@@ -267,7 +215,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={`w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/25 transition-all duration-300 ${isAnimating ? 'bg-amber-100/50 scale-[1.01]' : ''}`}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                 placeholder="name@innovaseed.sch.id"
               />
             </div>
@@ -283,7 +231,7 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={`w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-10 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/25 transition-all duration-300 ${isAnimating ? 'bg-amber-100/50 scale-[1.01]' : ''}`}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-10 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                 placeholder="••••••••••••"
               />
               <button
@@ -298,8 +246,8 @@ export default function LoginPage() {
             <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-xs mb-4">
               <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
               <div>
-                <b className="text-sm text-slate-800">Demo Mode Active ({roleConfig[activeRole].title})</b>
-                <p className="text-slate-500 mt-0.5">Credentials auto-filled for instant testing. Click sign in to enter the {roleConfig[activeRole].workspace}.</p>
+                <b className="text-sm text-slate-800">Active 2026 Cohort Synchronizer</b>
+                <p className="text-slate-500 mt-0.5">Authorized users have secure access to rapid telemetry logging, evaluation consoles, and live competition preparation dossiers.</p>
               </div>
             </div>
 
@@ -321,7 +269,7 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 cursor-pointer shadow-md"
             >
-              {loading ? 'Entering Workspace...' : `Sign In to ${roleConfig[activeRole].workspace} →`}
+              {loading ? 'Verifying Credentials...' : `Sign In to ${roles[activeRole].workspace} →`}
             </button>
           </form>
 
