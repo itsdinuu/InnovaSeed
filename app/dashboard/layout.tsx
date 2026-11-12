@@ -13,22 +13,23 @@ type TeamRealtimePayload = {
     lead_name?: string
     members?: string[]
     mentor_code?: string
+    cohort_batch?: string
   }
 }
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [userName, setUserName] = useState('Bayu')
-  const [teamName, setTeamName] = useState('Independent Innovator')
-  const [competitionTrack, setCompetitionTrack] = useState('National Science Fair Track')
+  const [userName, setUserName] = useState('')
+  const [teamName, setTeamName] = useState('')
+  const [competitionTrack, setCompetitionTrack] = useState('')
   const [unreadCount, setUnreadCount] = useState(0)
 
   // State untuk Modal Settings & Team Management (Termasuk Mentor Code)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [formTeamName, setFormTeamName] = useState('Independent Innovator')
-  const [formLeadName, setFormLeadName] = useState('Bayu')
-  const [formTrack, setFormTrack] = useState('National Science Fair Track')
+  const [formTeamName, setFormTeamName] = useState('')
+  const [formLeadName, setFormLeadName] = useState('')
+  const [formTrack, setFormTrack] = useState('')
   const [formMentorCode, setFormMentorCode] = useState('')
   
   // State anggota tim
@@ -54,10 +55,37 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const applyTeamState = useCallback((teamPayload?: TeamRealtimePayload['new']) => {
+    if (!teamPayload) return
+
+    if (teamPayload.team_name) {
+      setTeamName(teamPayload.team_name)
+      setFormTeamName(teamPayload.team_name)
+    }
+
+    if (teamPayload.lead_name) {
+      setUserName(teamPayload.lead_name)
+      setFormLeadName(teamPayload.lead_name)
+    }
+
+    if (teamPayload.members) {
+      setTeamMembers(teamPayload.members)
+    }
+
+    if (teamPayload.cohort_batch) {
+      setCompetitionTrack(teamPayload.cohort_batch)
+      setFormTrack(teamPayload.cohort_batch)
+    }
+
+    if (teamPayload.mentor_code !== undefined) {
+      setFormMentorCode(teamPayload.mentor_code)
+    }
+  }, [])
+
   useEffect(() => {
     async function getDashboardData() {
       const { data: { session } } = await supabase.auth.getSession()
-      const defaultLeadName = session?.user?.user_metadata?.lead_name ?? 'Bayu'
+      const defaultLeadName = session?.user?.user_metadata?.lead_name ?? ''
 
       if (session?.user?.user_metadata) {
         const metadata = session.user.user_metadata
@@ -76,14 +104,18 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
       if (!error && teamData) {
         setTeamRecordId(teamData.id)
-        setTeamName(teamData.team_name)
-        setFormTeamName(teamData.team_name)
+        setTeamName(teamData.team_name || '')
+        setFormTeamName(teamData.team_name || '')
         if (teamData.lead_name) {
           setUserName(teamData.lead_name)
           setFormLeadName(teamData.lead_name)
         }
         if (teamData.members && Array.isArray(teamData.members)) {
           setTeamMembers(teamData.members)
+        }
+        if (teamData.cohort_batch) {
+          setCompetitionTrack(teamData.cohort_batch)
+          setFormTrack(teamData.cohort_batch)
         }
         if (teamData.mentor_code) {
           setFormMentorCode(teamData.mentor_code)
@@ -120,14 +152,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         { event: '*', schema: 'public', table: 'teams' },
         (payload: TeamRealtimePayload) => {
           console.log('Realtime team update:', payload)
-          if (payload.new) {
-            setTeamName((currentTeamName) => payload.new?.team_name ?? currentTeamName)
-            setUserName((currentUserName) => payload.new?.lead_name ?? currentUserName)
-            setTeamMembers(payload.new.members || [])
-            if (payload.new.mentor_code !== undefined) {
-              setFormMentorCode(payload.new.mentor_code)
-            }
-          }
+          applyTeamState(payload.new)
         }
       )
       .on(
@@ -142,7 +167,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     return () => {
       supabase.removeChannel(realtimeChannel)
     }
-  }, [fetchUnreadCount])
+  }, [applyTeamState, fetchUnreadCount])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
