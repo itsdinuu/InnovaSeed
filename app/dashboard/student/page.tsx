@@ -20,11 +20,11 @@ type TelemetryLog = {
 
 export default function StudentDashboardPage() {
   const { isDarkMode } = useTheme()
-  const [userName, setUserName] = useState('Desti Andhini')
+  const [userName, setUserName] = useState('Student Innovator')
   const [researchField, setResearchField] = useState('SOFTWARE ENGINEERING TRACK')
-  const [mentorEmail, setMentorEmail] = useState('mentor.maya@innovaseed.sch.id')
+  const [mentorEmail, setMentorEmail] = useState('Faculty Mentor')
   const [institution, setInstitution] = useState('Plego Indonesia')
-  const [teamSize, setTeamSize] = useState('3 members')
+  const [teamSize, setTeamSize] = useState('Team Member')
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   
@@ -47,150 +47,114 @@ export default function StudentDashboardPage() {
   useEffect(() => {
     let cancelled = false
 
-    async function fetchDashboardData() {
+    async function fetchStudentDashboardData() {
       try {
-        // 1. Cek Mock Session localStorage (Bypass login otomatis untuk testing lokal)
-        const mockStorage = localStorage.getItem('innovaseed_mock_session')
-        if (mockStorage) {
-          try {
-            const mockSession = JSON.parse(mockStorage)
-            if (mockSession?.role === 'student' || mockSession?.route === '/dashboard/student') {
-              const name = mockSession.name || 'Desti Andhini'
+        setLoading(true)
+
+        // 1. Ambil sesi user aktif dari Supabase Auth
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        
+        if (authError || !user) {
+          // Jika tidak ada user login di Supabase, cek mock local storage untuk testing
+          const mockStorage = localStorage.getItem('innovaseed_mock_session')
+          if (mockStorage) {
+            try {
+              const mockSession = JSON.parse(mockStorage)
               if (!cancelled) {
-                setUserName(name)
+                setUserName(mockSession.name || 'Desti Andhini')
                 setResearchField('SOFTWARE ENGINEERING TRACK')
-                setMentorEmail('mentor.maya@innovaseed.sch.id')
                 setInstitution('Plego Indonesia')
                 setTeamSize('3 members')
                 setTelemetryLogs([
-                  { id: 'mock-telemetry-1', title: 'Prototype vibration stress check', status: 'Pending Review', date: '2026-11-12' },
-                  { id: 'mock-telemetry-2', title: 'Thermal efficiency optimization', status: 'Verified', date: '2026-11-11' }
+                  { id: 'mock-1', title: 'Prototype architecture setup', status: 'Verified', date: '2026-11-12' }
                 ])
-                setProjectData({ title: 'Young Innovator LMS (InnovaSeed v2)', description: 'Full-stack educational platform built with Next.js, Supabase & Tailwind.' })
-                setCurrentUserId('mock-student-user')
-                setLoading(false)
+                setProjectData({ title: 'Young Innovator LMS (InnovaSeed v2)', description: 'Full-stack platform built with Next.js & Supabase.' })
               }
-              return
+            } catch {
+              // ignore
             }
-          } catch {
-            // Abaikan jika format JSON rusak
           }
-        }
-
-        // 2. Jika tidak ada mock, cek Auth Supabase Asli
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
-          // Jika belum login sama sekali, set otomatis mock session agar halaman tetap bisa dibuka di localhost
-          const defaultMock = {
-            role: 'student',
-            name: 'Desti Andhini',
-            route: '/dashboard/student'
-          }
-          localStorage.setItem('innovaseed_mock_session', JSON.stringify(defaultMock))
-          
-          if (!cancelled) {
-            setUserName('Desti Andhini')
-            setResearchField('SOFTWARE ENGINEERING TRACK')
-            setMentorEmail('mentor.maya@innovaseed.sch.id')
-            setInstitution('Plego Indonesia')
-            setTeamSize('3 members')
-            setTelemetryLogs([
-              { id: 'mock-telemetry-1', title: 'Prototype vibration stress check', status: 'Pending Review', date: '2026-11-12' },
-              { id: 'mock-telemetry-2', title: 'Thermal efficiency optimization', status: 'Verified', date: '2026-11-11' }
-            ])
-            setProjectData({ title: 'Young Innovator LMS (InnovaSeed v2)', description: 'Full-stack educational platform built with Next.js, Supabase & Tailwind.' })
-            setCurrentUserId('mock-student-user')
-            setLoading(false)
-          }
+          setLoading(false)
           return
         }
 
-        const user = session.user
-        setCurrentUserId(user.id)
-
-        // Ambil data profil dari database Supabase
-        const { data: profileDataResult } = await supabase
-          .from('profiles')
-          .select('*')
-          .or(`id.eq.${user.id},uuid.eq.${user.id}`)
-          .maybeSingle()
-
-        if (profileDataResult) {
-          if (profileDataResult.full_name) setUserName(profileDataResult.full_name)
-          if (profileDataResult.institution) setInstitution(profileDataResult.institution)
-          if (profileDataResult.role) setResearchField(profileDataResult.role.toUpperCase() + ' TRACK')
+        if (!cancelled) {
+          setCurrentUserId(user.id)
         }
 
-        // Ambil data research logs dari database
-        const { data: logsData, error: logsError } = await supabase
+        // 2. Ambil data profil siswa dari tabel public.profiles berdasarkan user.id
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (!cancelled && profile) {
+          if (profile.full_name || profile.name) {
+            setUserName(profile.full_name || profile.name)
+          } else if (user.email) {
+            setUserName(user.email.split('@')[0])
+          }
+
+          if (profile.institution) setInstitution(profile.institution)
+          if (profile.role) setResearchField(profile.role.toUpperCase() + ' TRACK')
+          if (profile.team_size) setTeamSize(profile.team_size)
+          if (profile.mentor_email) setMentorEmail(profile.mentor_email)
+        } else if (!cancelled && user.email) {
+          setUserName(user.email.split('@')[0])
+        }
+
+        // 3. Ambil data research logs / telemetry khusus user ini
+        const { data: logsData } = await supabase
           .from('research_logs')
           .select('*')
           .eq('user_id', user.id)
           .order('id', { ascending: false })
 
-        if (!logsError && logsData && logsData.length > 0) {
+        if (!cancelled && logsData && logsData.length > 0) {
           setTelemetryLogs(logsData)
         }
 
-        // Ambil data projects dari database
-        const { data: projectDataResult } = await supabase
+        // 4. Ambil data proyek inovasi dari tabel projects
+        const { data: projectRes } = await supabase
           .from('projects')
           .select('*')
           .eq('user_id', user.id)
           .limit(1)
           .maybeSingle()
 
-        if (projectDataResult) {
-          setProjectData(projectDataResult)
+        if (!cancelled && projectRes) {
+          setProjectData(projectRes)
         }
-      } catch {
-        if (!cancelled) setLoading(false)
+
+      } catch (err) {
+        console.error('Error loading student dashboard:', err)
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
 
-    const timeoutId = window.setTimeout(() => {
-      if (!cancelled) setLoading(false)
-    }, 400)
-
-    fetchDashboardData()
+    fetchStudentDashboardData()
 
     return () => {
       cancelled = true
-      window.clearTimeout(timeoutId)
     }
   }, [])
 
+  // Fungsi Tambah Log Telemetri ke Supabase
   const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newLogTitle.trim()) return
+    if (!newLogTitle.trim() || !currentUserId) return
 
     setSubmitting(true)
     try {
       const currentDate = new Date().toISOString().split('T')[0]
 
-      // Cek apakah sedang menggunakan mock session/local testing
-      const isMock = localStorage.getItem('innovaseed_mock_session') !== null || currentUserId === 'mock-student-user'
-
-      if (isMock) {
-        const mockEntry = {
-          id: Date.now(),
-          title: newLogTitle,
-          status: 'Pending Review',
-          date: currentDate
-        }
-        setTelemetryLogs(prev => [mockEntry, ...prev])
-        setNewLogTitle('')
-        triggerToast('Telemetry log successfully recorded (Mock Mode)!')
-        return
-      }
-
       const { data, error } = await supabase
         .from('research_logs')
         .insert([{
           user_id: currentUserId,
-          title: newLogTitle,
+          title: newLogTitle.trim(),
           status: 'Pending Review',
           date: currentDate
         }])
@@ -206,17 +170,16 @@ export default function StudentDashboardPage() {
       triggerToast('Telemetry log successfully recorded to cloud!')
     } catch (err: unknown) {
       console.error(err)
-      
+      // Fallback lokal jika tabel offline
       const fallbackEntry = {
         id: Date.now(),
-        title: newLogTitle,
+        title: newLogTitle.trim(),
         status: 'Pending Review',
         date: new Date().toISOString().split('T')[0]
       }
-      
-      setTelemetryLogs([fallbackEntry, ...telemetryLogs])
+      setTelemetryLogs(prev => [fallbackEntry, ...prev])
       setNewLogTitle('')
-      triggerToast("Log added locally (Database offline fallback).")
+      triggerToast('Log added locally (Database offline fallback).')
     } finally {
       setSubmitting(false)
     }
@@ -225,7 +188,10 @@ export default function StudentDashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
-        <p className="text-sm text-slate-500 animate-pulse">Loading innovation data...</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm font-medium">Synchronizing student research workspace...</p>
+        </div>
       </div>
     )
   }

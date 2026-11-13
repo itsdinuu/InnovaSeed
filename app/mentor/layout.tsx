@@ -1,5 +1,6 @@
 "use client"
 
+
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -29,37 +30,25 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
           }
         }
 
-        // 2. Autentikasi ketat via Supabase Auth
+        // 2. Autentikasi ketat via Supabase Auth (auth.users)
         const { data: { user }, error: authError } = await supabase.auth.getUser()
         if (authError || !user) {
           router.push('/login')
           return
         }
 
-        // 3. Tarik data profil asli dari tabel public.profiles berdasarkan user.id
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('role, full_name, name')
-          .eq('id', user.id)
-          .maybeSingle()
+        // 3. Ambil nama lengkap langsung dari user_metadata Supabase Auth
+        const metadata = user.user_metadata || {}
+        const fullName = metadata.full_name || metadata.name || user.email?.split('@')[0] || 'Faculty Lead'
+        const role = metadata.role || 'mentor'
 
-        if (profileError) {
-          console.error('Error fetching mentor profile:', profileError.message)
-        }
-
-        // Jika profil ditemukan tapi bukan mentor, alihkan ke dashboard yang sesuai
-        if (profile && profile.role && profile.role !== 'mentor') {
-          router.push(profile.role === 'student' ? '/dashboard/student' : '/login')
+        // Jika role bukan mentor, alihkan ke halaman yang sesuai
+        if (role && role !== 'mentor') {
+          router.push('/dashboard/student')
           return
         }
 
-        // Ambil nama lengkap mentor dari database
-        if (profile?.full_name || profile?.name) {
-          setMentorName(profile.full_name || profile.name)
-        } else if (user.email) {
-          // Fallback jika full_name kosong, gunakan bagian depan email
-          setMentorName(user.email.split('@')[0])
-        }
+        setMentorName(fullName)
       } catch (err) {
         console.error('Auth verification exception:', err)
       } finally {
