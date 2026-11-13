@@ -20,9 +20,9 @@ type TelemetryLog = {
 
 export default function StudentDashboardPage() {
   const { isDarkMode } = useTheme()
-  const [userName, setUserName] = useState('Innovator')
-  const [researchField, setResearchField] = useState('Computer Science & IoT')
-  const [mentorEmail, setMentorEmail] = useState('Pending Verification')
+  const [userName, setUserName] = useState('Desti Andhini')
+  const [researchField, setResearchField] = useState('SOFTWARE ENGINEERING TRACK')
+  const [mentorEmail, setMentorEmail] = useState('mentor.maya@innovaseed.sch.id')
   const [institution, setInstitution] = useState('Plego Indonesia')
   const [teamSize, setTeamSize] = useState('3 members')
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
@@ -170,10 +170,26 @@ export default function StudentDashboardPage() {
     try {
       const currentDate = new Date().toISOString().split('T')[0]
 
+      // Cek apakah sedang menggunakan mock session/local testing
+      const isMock = localStorage.getItem('innovaseed_mock_session') !== null || currentUserId === 'mock-student-user'
+
+      if (isMock) {
+        const mockEntry = {
+          id: Date.now(),
+          title: newLogTitle,
+          status: 'Pending Review',
+          date: currentDate
+        }
+        setTelemetryLogs(prev => [mockEntry, ...prev])
+        setNewLogTitle('')
+        triggerToast('Telemetry log successfully recorded (Mock Mode)!')
+        return
+      }
+
       const { data, error } = await supabase
         .from('research_logs')
         .insert([{
-          user_id: currentUserId || 'mock-student-user',
+          user_id: currentUserId,
           title: newLogTitle,
           status: 'Pending Review',
           date: currentDate
@@ -200,7 +216,7 @@ export default function StudentDashboardPage() {
       
       setTelemetryLogs([fallbackEntry, ...telemetryLogs])
       setNewLogTitle('')
-      triggerToast("Log added locally (Database sync pending).")
+      triggerToast("Log added locally (Database offline fallback).")
     } finally {
       setSubmitting(false)
     }

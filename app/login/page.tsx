@@ -83,7 +83,7 @@ export default function LoginPage() {
       const mockSession = {
         role: resolvedRole,
         email: email || selectedConfig.demoEmail,
-        name: selectedConfig.title,
+        name: resolvedRole === 'student' ? 'Desti Andhini' : selectedConfig.title,
         route: selectedConfig.link,
         timestamp: Date.now()
       }
