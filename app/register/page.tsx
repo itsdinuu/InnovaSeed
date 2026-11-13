@@ -29,6 +29,13 @@ export default function RegisterPage() {
     ['Start logging trials', 'Unlock your workspace and prep for judging.']
   ]
 
+  const showCustomToast = (msg: string) => {
+    setToastMessage(msg)
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 3000)
+  }
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     if (formData.password !== formData.confirmPassword) {
@@ -40,7 +47,6 @@ export default function RegisterPage() {
 
     try {
       // 1. Register account with Supabase Auth & kirim metadata khusus siswa
-      // Trigger database akan otomatis menangkap data ini dan memasukkannya ke tabel 'profiles' dengan role 'student'
       const { error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -51,21 +57,14 @@ export default function RegisterPage() {
             institution: formData.institution,
             research_field: formData.researchField,
             team_size: formData.teamSize,
-            role: 'student' // Ditetapkan otomatis khusus student
+            role: 'student'
           }
         }
       })
 
       if (error) throw error
 
-      const showCustomToast = (msg: string) => {
-        setToastMessage(msg)
-        setTimeout(() => {
-          setToastMessage(null)
-        }, 3000)
-      }
-
-      // 2. Jika sukses, arahkan ke halaman login
+      // 2. Jika sukses, tampilkan toast dan arahkan ke halaman login
       showCustomToast('Team account registration successful! Your profile has been automatically created. Please sign in.')
       router.push('/login')
 
@@ -201,7 +200,7 @@ export default function RegisterPage() {
             <div className="sm:col-span-2">
               <div className="flex justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-700">Institutional Email</label>
-                <span className="text-[11px] text-slate-400">e.g., student.lead@Innovaseed.sch.id</span>
+                <span className="text-[11px] text-slate-400">e.g., student.lead@innovaseed.sch.id</span>
               </div>
               <div className="relative">
                 <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
@@ -235,7 +234,7 @@ export default function RegisterPage() {
               <select
                 value={formData.researchField}
                 onChange={(e) => setFormData({...formData, researchField: e.target.value})}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
               >
                 <option>Biotechnology &amp; Health</option>
                 <option>Environmental Engineering</option>
@@ -249,7 +248,7 @@ export default function RegisterPage() {
               <select
                 value={formData.teamSize}
                 onChange={(e) => setFormData({...formData, teamSize: e.target.value})}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
               >
                 <option>1 member</option>
                 <option>2 members</option>
@@ -275,7 +274,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600"
+                  className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <i className={`fa-regular ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
                 </button>
@@ -306,15 +305,15 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <label className="flex gap-2 items-center text-xs text-slate-600 mt-4">
-            <input type="checkbox" defaultChecked required className="accent-amber-500" />
+          <label className="flex gap-2 items-center text-xs text-slate-600 mt-4 cursor-pointer">
+            <input type="checkbox" defaultChecked required className="accent-amber-500 w-4 h-4 cursor-pointer" />
             I agree to the <Link href="#" className="font-semibold underline text-slate-900">Terms of Use</Link> and <Link href="#" className="font-semibold underline text-slate-900">Research Data Protection Policy</Link> (ISO/IEC 17025).
           </label>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 mt-4"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 mt-4 cursor-pointer shadow-md"
           >
             {loading ? 'Creating Account...' : 'Create Team Account →'}
           </button>
@@ -331,7 +330,7 @@ export default function RegisterPage() {
         </form>
       </main>
 
-        {/* Toast Notification Floating */}
+      {/* Toast Notification Floating */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-[#1E293B] border border-amber-500/40 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-bounce">
           <div className="w-6 h-6 rounded-full bg-amber-500 text-slate-900 grid place-items-center font-bold text-xs">
@@ -340,7 +339,6 @@ export default function RegisterPage() {
           <span className="text-xs font-medium">{toastMessage}</span>
         </div>
       )}
-
     </div>
   )
 }

@@ -17,46 +17,54 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function checkMentorAuth() {
-      const mockStorage = localStorage.getItem('innovaseed_mock_session')
-      if (mockStorage) {
-        try {
+      try {
+        // 1. Cek sesi lokal terlebih dahulu (opsional untuk kemudahan testing)
+        const mockStorage = localStorage.getItem('innovaseed_mock_session')
+        if (mockStorage) {
           const mockSession = JSON.parse(mockStorage)
           if (mockSession?.role === 'mentor' || mockSession?.route === '/mentor') {
             setMentorName(mockSession.name || 'Faculty Lead')
             setLoading(false)
             return
           }
-        } catch {
-          // ignore invalid mock session data and fall through to Supabase guard
         }
-      }
 
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError || !user) {
-        router.push('/login')
-        return
-      }
+        // 2. Autentikasi ketat via Supabase Auth
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (authError || !user) {
+          router.push('/login')
+          return
+        }
 
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role, full_name, name')
-        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
-        .maybeSingle()
+        // 3. Tarik data profil asli dari tabel public.profiles berdasarkan user.id
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role, full_name, name')
+          .eq('id', user.id)
+          .maybeSingle()
 
-      if (profile && profile.role && profile.role !== 'mentor') {
-        router.push(profile.role === 'student' ? '/dashboard/student' : '/dashboard')
-        return
-      }
+        if (profileError) {
+          console.error('Error fetching mentor profile:', profileError.message)
+        }
 
-      if (profileError && !profile) {
+        // Jika profil ditemukan tapi bukan mentor, alihkan ke dashboard yang sesuai
+        if (profile && profile.role && profile.role !== 'mentor') {
+          router.push(profile.role === 'student' ? '/dashboard/student' : '/login')
+          return
+        }
+
+        // Ambil nama lengkap mentor dari database
+        if (profile?.full_name || profile?.name) {
+          setMentorName(profile.full_name || profile.name)
+        } else if (user.email) {
+          // Fallback jika full_name kosong, gunakan bagian depan email
+          setMentorName(user.email.split('@')[0])
+        }
+      } catch (err) {
+        console.error('Auth verification exception:', err)
+      } finally {
         setLoading(false)
-        return
       }
-
-      if (profile?.full_name || profile?.name) {
-        setMentorName(profile.full_name || profile.name)
-      }
-      setLoading(false)
     }
 
     checkMentorAuth()
@@ -68,7 +76,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
     router.push('/login')
   }
 
-  // Tampilkan loading sebentar saat mengecek autentikasi dan role
+  // Tampilkan indikator loading saat memverifikasi sesi login
   if (loading) {
     return (
       <div className={`flex min-h-screen items-center justify-center ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#fff8f4] text-[#221a12]'}`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -136,7 +144,6 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
             <i className="fa-solid fa-folder-tree w-4 text-center"></i>Student Submissions
           </Link>
 
-          {/* Menu Competition Control yang baru ditambahkan */}
           <Link 
             href="/mentor/competition-prep" 
             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${

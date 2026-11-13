@@ -9,8 +9,8 @@ import Link from 'next/link'
 export default function LoginPage() {
   const router = useRouter()
   const [activeRole, setActiveRole] = useState<'student' | 'mentor' | 'judge'>('student')
-  const [email, setEmail] = useState('student.lead@innovaseed.sch.id')
-  const [password, setPassword] = useState('studentpass123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -23,9 +23,7 @@ export default function LoginPage() {
       title: 'Student Innovator',
       desc: 'Access the student dashboard and research workspace.',
       workspace: 'Student Dashboard',
-      link: '/dashboard/student',
-      demoEmail: 'student.lead@innovaseed.sch.id',
-      demoPass: 'studentpass123'
+      link: '/dashboard/student'
     },
     mentor: {
       key: 'mentor',
@@ -33,9 +31,7 @@ export default function LoginPage() {
       title: 'Faculty & Mentor',
       desc: 'Review teams, mentor feedback, and guidance workflows.',
       workspace: 'Mentor Dashboard',
-      link: '/mentor',
-      demoEmail: 'mentor.maya@innovaseed.sch.id',
-      demoPass: 'mentorpass123'
+      link: '/mentor'
     },
     judge: {
       key: 'judge',
@@ -43,9 +39,7 @@ export default function LoginPage() {
       title: 'Competition Judge',
       desc: 'Assess submissions and evaluate innovation finalists.',
       workspace: 'Judges Dashboard',
-      link: '/dashboard/judges',
-      demoEmail: 'judge.mentor@innovaseed.sch.id',
-      demoPass: 'judgepass123'
+      link: '/dashboard/judges'
     }
   } as const
 
@@ -53,8 +47,8 @@ export default function LoginPage() {
 
   const handleRoleSelect = (role: 'student' | 'mentor' | 'judge') => {
     setActiveRole(role)
-    setEmail(roleConfig[role].demoEmail)
-    setPassword(roleConfig[role].demoPass)
+    setEmail('')
+    setPassword('')
     setErrorMessage('')
   }
 
@@ -64,37 +58,35 @@ export default function LoginPage() {
     setErrorMessage('')
 
     try {
+      // 1. Autentikasi akun dengan Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (authError) throw authError
+
+      // 2. Ambil data role asli dari tabel 'profiles' di database
       let resolvedRole: 'student' | 'mentor' | 'judge' = activeRole
+      if (authData?.user) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', authData.user.id)
+          .single()
 
-      const { data: profileMatch, error: profileError } = await supabase
-        .from('profiles')
-        .select('role, full_name, email')
-        .ilike('email', email)
-        .limit(1)
-
-      if (!profileError && profileMatch && profileMatch.length > 0 && profileMatch[0]?.role) {
-        const roleFromDatabase = profileMatch[0].role
-        if (['student', 'mentor', 'judge'].includes(roleFromDatabase)) {
-          resolvedRole = roleFromDatabase as 'student' | 'mentor' | 'judge'
+        if (!profileError && profileData?.role) {
+          const dbRole = profileData.role.toLowerCase()
+          if (['student', 'mentor', 'judge'].includes(dbRole)) {
+            resolvedRole = dbRole as 'student' | 'mentor' | 'judge'
+          }
         }
       }
 
       const selectedConfig = roleConfig[resolvedRole]
-      const mockSession = {
-        role: resolvedRole,
-        email: email || selectedConfig.demoEmail,
-        name: resolvedRole === 'student' ? 'Desti Andhini' : selectedConfig.title,
-        route: selectedConfig.link,
-        timestamp: Date.now()
-      }
-
-      localStorage.setItem('innovaseed_mock_session', JSON.stringify(mockSession))
-
-      setEmail(selectedConfig.demoEmail)
-      setPassword(selectedConfig.demoPass)
       router.replace(selectedConfig.link)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Login failed while checking the assigned role.'
+      const message = err instanceof Error ? err.message : 'Login failed. Please check your credentials.'
       setErrorMessage(message)
     } finally {
       setLoading(false)
@@ -257,9 +249,8 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleLogin}>
-            <div className="flex justify-between">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Institutional Email</label>
-              <span className="text-[11px] text-amber-600 font-medium">Demo: {roleConfig[activeRole].demoEmail}</span>
+            <div className="flex justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700">Institutional Email</label>
             </div>
             <div className="relative mb-4">
               <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
@@ -309,20 +300,12 @@ export default function LoginPage() {
               </label>
             </div>
 
-            <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 text-xs mb-4">
-              <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
-              <div>
-                <b className="text-sm text-slate-800">Demo Mode Active ({roleConfig[activeRole].title})</b>
-                <p className="text-slate-500 mt-0.5">Credentials are auto-filled for instant testing. Submit to enter the {roleConfig[activeRole].workspace}.</p>
-              </div>
-            </div>
-
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 cursor-pointer shadow-md"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 cursor-pointer shadow-md mt-2"
             >
-              {loading ? 'Verifying Credentials...' : `Sign In to ${roleConfig[activeRole].workspace} →`}
+              {loading ? 'Authenticating with Database...' : `Sign In to ${roleConfig[activeRole].workspace} →`}
             </button>
           </form>
 

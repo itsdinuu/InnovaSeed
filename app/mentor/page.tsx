@@ -1,6 +1,5 @@
 "use client"
 
-export const instant = false
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
