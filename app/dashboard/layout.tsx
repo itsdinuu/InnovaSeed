@@ -24,6 +24,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   const [competitionTrack, setCompetitionTrack] = useState('National Science Fair Track')
   const [unreadCount, setUnreadCount] = useState(0)
 
+  // State untuk Dropdown Menu Competition di Sidebar (Default Terbuka jika berada di area competition)
+  const [isCompetitionOpen, setIsCompetitionOpen] = useState(pathname?.includes('/competition') ?? true)
+
   // State for Settings & Team Management Modal (Including Mentor Code)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [formTeamName, setFormTeamName] = useState('Independent Innovator')
@@ -57,51 +60,26 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function getDashboardData() {
-      let user: { id: string; email?: string | null; user_metadata?: { lead_name?: string } } | null = null
-      let profileData: { role?: string; full_name?: string; name?: string } | null = null
-
-      const mockStorage = localStorage.getItem('innovaseed_mock_session')
-      if (mockStorage) {
-        const mockSession = JSON.parse(mockStorage)
-        if (mockSession?.role === 'student' || mockSession?.role === 'judge') {
-          user = {
-            id: mockSession.role === 'student' ? 'mock-student-user' : 'mock-judge-user',
-            email: mockSession.email,
-            user_metadata: { lead_name: mockSession.name || (mockSession.role === 'student' ? 'Student Innovator' : 'Competition Judge') }
-          }
-          profileData = {
-            role: mockSession.role,
-            full_name: mockSession.name || (mockSession.role === 'student' ? 'Student Innovator' : 'Competition Judge')
-          }
-        }
+      // Langsung cek sesi aktif dari Supabase Auth secara murni
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push('/login')
+        return
       }
 
-      if (!user) {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
-          router.push('/login')
-          return
-        }
+      const user = session.user
 
-        user = session.user
-      }
-
-      if (!profileData && user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('role, full_name, name')
-          .or(`id.eq.${user.id},uuid.eq.${user.id}`)
-          .maybeSingle()
-
-        profileData = data
-      }
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('role, full_name, name')
+        .or(`id.eq.${user.id},uuid.eq.${user.id}`)
+        .maybeSingle()
 
       if (profileData?.role && !['student', 'judge'].includes(profileData.role)) {
         router.push(profileData.role === 'mentor' ? '/mentor' : '/dashboard')
         return
       }
 
-      // Fetch name from Supabase 'profiles' table first
       let currentName = 'Innovator'
 
       if (profileData && profileData.full_name) {
@@ -128,7 +106,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       setUserName(currentName)
       setFormLeadName(currentName)
 
-      // Fetch team data from Supabase
       const { data: teamData, error } = await supabase
         .from('teams')
         .select('*')
@@ -168,14 +145,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     getDashboardData()
 
-    // --- SUPABASE REALTIME SUBSCRIPTION (WEBSOCKET) ---
     const realtimeChannel = supabase
       .channel('realtime-dashboard-sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'teams' },
         (payload: TeamRealtimePayload) => {
-          console.log('Realtime team update:', payload)
           if (payload.new) {
             setTeamName((currentTeamName) => payload.new?.team_name ?? currentTeamName)
             if (payload.new?.lead_name) {
@@ -289,7 +264,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Global Sidebar */}
-      <aside className={`hidden lg:flex flex-col w-60 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`}>
+      <aside className={`hidden lg:flex flex-col w-64 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`}>
         <div className="flex items-center gap-3 mb-5">
           <Image
             src="/InnovaSeed-Logo.png"
@@ -354,9 +329,50 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
               <Link href="/dashboard/notes" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/notes') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
                 <i className="fa-solid fa-pen-to-square w-4 text-center"></i>Prototype Notes
               </Link>
-              <Link href="/dashboard/competition-prep" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/competition-prep') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
-                <i className="fa-solid fa-clipboard-check w-4 text-center"></i>Competition Prep
-              </Link>
+
+              {/* Nested Dropdown Menu: Competition */}
+              <div>
+                <button
+                  onClick={() => setIsCompetitionOpen(!isCompetitionOpen)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
+                    pathname?.includes('/competition')
+                      ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] border-l-[3px] border-[#F59E0B]')
+                      : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <i className="fa-solid fa-trophy w-4 text-center"></i> Competition
+                  </span>
+                  <i className={`fa-solid fa-chevron-down text-xs transition-transform ${isCompetitionOpen ? "rotate-180" : ""}`}></i>
+                </button>
+
+                {/* Sub-menu / Anakkan di Bawahnya */}
+                {isCompetitionOpen && (
+                  <div className="ml-4 mt-1 pl-3 border-l border-slate-700/60 space-y-1">
+                    <Link
+                      href="/dashboard/competition-target"
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                        pathname?.includes('/competition-target')
+                          ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-bold' : 'bg-[#FEF3C7] text-[#855300] font-bold')
+                          : (isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50' : 'text-[#534434] hover:bg-[#fff1e5]')
+                      }`}
+                    >
+                      <i className="fa-solid fa-circle-dot w-4 text-center text-[10px]"></i> Competition Target
+                    </Link>
+                    <Link
+                      href="/dashboard/competition-prep"
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                        pathname?.includes('/competition-prep')
+                          ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-bold' : 'bg-[#FEF3C7] text-[#855300] font-bold')
+                          : (isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50' : 'text-[#534434] hover:bg-[#fff1e5]')
+                      }`}
+                    >
+                      <i className="fa-solid fa-circle-check w-4 text-center text-[10px]"></i> Competition Prep
+                    </Link>
+                  </div>
+                )}
+              </div>
+
               <Link href="/dashboard/mentor-feedback" className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg transition ${pathname?.includes('/mentor-feedback') ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
                 <div className="flex items-center gap-3">
                   <i className="fa-solid fa-comments w-4 text-center"></i>
@@ -543,7 +559,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Settings & Team Management Modal (Including Mentor Code Input) */}
+      {/* Settings & Team Management Modal */}
       {isSettingsOpen && !isJudgeArea && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
@@ -577,7 +593,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 />
               </div>
 
-              {/* MENTOR CODE INPUT */}
               <div>
                 <label className="block font-semibold mb-1 text-amber-500">Mentor Invite Code (e.g. MAYA-2026)</label>
                 <input 
@@ -603,7 +618,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </select>
               </div>
 
-              {/* Team Members Management Section */}
               <div className="space-y-2 pt-2 border-t border-inherit">
                 <label className="block font-semibold">Team Members (Self-Managed)</label>
                 <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-inherit bg-amber-500/5">

@@ -37,14 +37,12 @@ export default function CompetitionPrepPage() {
     setLoading(true)
 
     try {
-      // Fetch competition prep data safely
       const { data: compData } = await supabase
         .from('competition_prep')
         .select('*')
         .limit(1)
         .maybeSingle()
 
-      // Fetch teams data safely
       const { data: teamData } = await supabase
         .from('teams')
         .select('*')
@@ -53,14 +51,12 @@ export default function CompetitionPrepPage() {
 
       const teamName = teamData?.team_name || 'Team AlBot'
 
-      // Fetch checklist data
       const { data: checkData, error: checkError } = await supabase
         .from('competition_checklists')
         .select('*')
         .eq('team_name', teamName)
         .order('id', { ascending: true })
 
-      // If the checklist is empty or the table doesn't exist yet, use default local data
       let finalChecklist: ChecklistItem[] = Array.isArray(checkData) ? checkData : []
       if (!checkData || checkData.length === 0 || checkError) {
         finalChecklist = [
@@ -70,7 +66,6 @@ export default function CompetitionPrepPage() {
           { id: 4, team_name: teamName, task_title: 'Pitch Deck Presentation File Uploaded', is_completed: false },
         ]
 
-        // Attempt to insert into database in the background (non-blocking if it fails)
         supabase.from('competition_checklists').insert(finalChecklist).then(() => {})
       }
 
@@ -88,7 +83,6 @@ export default function CompetitionPrepPage() {
       setChecklist(finalChecklist)
     } catch (err) {
       console.warn('Failed to fetch competition data from Supabase, using local fallback:', err)
-      // Absolute fallback to ensure UI doesn't remain stuck in loading on total failure
       setSubmission({
         id: 1,
         team_name: 'Team AlBot',
@@ -106,7 +100,6 @@ export default function CompetitionPrepPage() {
         { id: 2, team_name: 'Team AlBot', task_title: 'Prototype Architecture & Database Schema Setup', is_completed: true }
       ])
     } finally {
-      // THIS IS THE KEY: Ensure loading is always turned off under any condition (success/failure)
       setLoading(false)
     }
   }, [])
@@ -170,15 +163,18 @@ export default function CompetitionPrepPage() {
     setSaving(false)
   }
 
+  const completedCount = checklist.filter(i => i.is_completed).length
+  const progressPercentage = checklist.length > 0 ? Math.round((completedCount / checklist.length) * 100) : 0
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-extrabold flex items-center gap-2">
-          <i className="fa-solid fa-trophy text-amber-500"></i> Competition Prep &amp; Deliverables 🏆
+        <h1 className="text-2xl font-extrabold flex items-center gap-2.5">
+          <i className="fa-solid fa-clipboard-check text-emerald-400"></i> Competition Prep &amp; Deliverables
         </h1>
         <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-          Prepare your final competition assets, track dynamic checklists, and review faculty rubric evaluations.
+          Pantau progress persiapan lomba, selesaikan milestone checklist, dan unggah link deliverable untuk review mentor.
         </p>
       </div>
 
@@ -186,6 +182,25 @@ export default function CompetitionPrepPage() {
         <div className="text-center py-16 text-slate-500 animate-pulse text-xs">Loading competition workspace...</div>
       ) : (
         <div className="space-y-6">
+          {/* Progress Bar & Status (Tambahan Biar Makin Sesuai UI Target) */}
+          <div className={`border rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
+            <div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-widest">
+                Milestone Progress
+              </span>
+              <h3 className="font-bold text-base mt-1.5">{submission?.team_name || 'My Team'} Preparation Status</h3>
+            </div>
+            <div className="w-full sm:w-48 text-right">
+              <span className="text-xs text-slate-400 block mb-1">Completion: <strong className="text-emerald-400">{progressPercentage}%</strong></span>
+              <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                <div 
+                  className="h-full bg-emerald-500 transition-all duration-300" 
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* KARTU REKAP NILAI RUBRIK DARI MENTOR (GRADING & RUBRICS) */}
           <div className={`border rounded-2xl p-6 shadow-xs space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
             <div className="flex items-center justify-between border-b pb-3 border-inherit">
@@ -193,7 +208,7 @@ export default function CompetitionPrepPage() {
                 <span className="text-[10px] font-bold px-2.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 uppercase tracking-widest">
                   Official Scoring Rubrics
                 </span>
-                <h3 className="font-bold text-lg mt-1">{submission?.team_name || 'My Team'} Assessment</h3>
+                <h3 className="font-bold text-lg mt-1">Faculty &amp; Mentor Assessment</h3>
               </div>
               <div>
                 <span className={`text-xs font-extrabold px-3 py-1 rounded-full border ${
@@ -237,7 +252,7 @@ export default function CompetitionPrepPage() {
                 <i className="fa-solid fa-list-check text-amber-500"></i> Milestone &amp; Submission Checklist
               </h3>
               <span className="text-xs font-semibold text-amber-500">
-                {checklist.filter(i => i.is_completed).length} of {checklist.length} Completed
+                {completedCount} of {checklist.length} Completed
               </span>
             </div>
             
@@ -246,7 +261,7 @@ export default function CompetitionPrepPage() {
                 <label 
                   key={item.id} 
                   onClick={() => toggleChecklist(item.id, item.is_completed)}
-                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${
+                  className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition ${
                     item.is_completed 
                       ? (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800') 
                       : (isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-200 hover:bg-slate-800' : 'bg-[#fff8f4] border-[#d8c3ad] hover:bg-[#fbebdd]')
@@ -258,7 +273,7 @@ export default function CompetitionPrepPage() {
                     onChange={() => {}} 
                     className="w-4 h-4 accent-amber-500 rounded cursor-pointer" 
                   />
-                  <span className={`font-medium ${item.is_completed ? 'line-through opacity-80' : ''}`}>
+                  <span className={`font-medium text-sm ${item.is_completed ? 'line-through opacity-80' : ''}`}>
                     {item.task_title}
                   </span>
                 </label>
