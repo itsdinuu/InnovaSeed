@@ -1,69 +1,93 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
 
 type TaskStatus = 'Backlog' | 'In Progress' | 'Under Review' | 'Completed'
-type TaskPriority = 'Low' | 'Medium' | 'High'
 
-type Task = {
+type ProjectTask = {
   id: number | string
   title: string
   description?: string
   status: TaskStatus
-  priority?: TaskPriority
+  priority?: string
   assignee?: string
+  problem_statement?: string | null
+  how_it_works?: string | null
+  materials_needed?: string | null
+  step_by_step_guide?: string | null
 }
+
+const KANBAN_COLUMNS: TaskStatus[] = ['Backlog', 'In Progress', 'Under Review', 'Completed']
 
 export default function ProjectWorkspacePage() {
   const { isDarkMode } = useTheme()
-  const [tasks, setTasks] = useState<Task[]>([])
+  const [tasks, setTasks] = useState<ProjectTask[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('Desti A.')
 
-  // Form state for new task
+  const [selectedProjectDetail, setSelectedProjectDetail] = useState<ProjectTask | null>(null)
+
+  // Form state for new workspace item
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<TaskStatus>('Backlog')
-  const [priority, setPriority] = useState<TaskPriority>('Medium')
-  const [assignee, setAssignee] = useState('')
+  const [priority, setPriority] = useState('Medium')
 
-  useEffect(() => {
-    async function fetchTasks() {
-      setLoading(true)
+  const fetchProjectTasks = useCallback(async () => {
+    setLoading(true)
 
-      // Get active user from Supabase session
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        const name = session.user.user_metadata?.full_name || session.user.user_metadata?.lead_name || session.user.email?.split('@')[0] || 'Desti A.'
-        setCurrentUserName(name)
-        if (!assignee) setAssignee(name)
-      }
-
-      // Fetch real data from Supabase database
-      const { data, error } = await supabase
-        .from('project_tasks')
-        .select('*')
-        .order('id', { ascending: false })
-
-      if (!error && data && data.length > 0) {
-        setTasks(data)
-      } else {
-        // Fallback demo data if the table hasn't been created yet
-        setTasks([
-          { id: 1, title: 'Sensor Calibration & Baseline Testing', description: 'Ensure ISO/IEC 17025 tolerance limits on moisture probes.', status: 'In Progress', priority: 'High', assignee: 'Desti A.' },
-          { id: 2, title: 'Next.js Frontend Routing Optimization', description: 'Refactor app router layouts and clean up TypeScript warnings.', status: 'Backlog', priority: 'Medium', assignee: 'Team Lead' },
-          { id: 3, title: 'Faculty Mentor Approval Dossier', description: 'Submit preliminary telemetry logs for 48-hour verification window.', status: 'Under Review', priority: 'High', assignee: 'Faculty Mentor' },
-          { id: 4, title: 'Supabase Auth & Database Schema Setup', description: 'Configure RLS policies and table triggers for user profiles.', status: 'Completed', priority: 'High', assignee: 'Desti A.' }
-        ])
-      }
-      setLoading(false)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session?.user) {
+      const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Desti A.'
+      setCurrentUserName(name)
     }
 
-    fetchTasks()
-  }, [assignee])
+    // Mengambil data dari tabel project_tasks di Supabase
+    const { data, error } = await supabase
+      .from('project_tasks')
+      .select('*')
+      .order('id', { ascending: false })
+
+    if (!error && data) {
+      setTasks(data)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const loadInitialData = async () => {
+      if (isCancelled) return
+      await fetchProjectTasks()
+    }
+
+    const timeoutId = setTimeout(() => {
+      void loadInitialData()
+    }, 0)
+
+    // --- REALTIME SUBSCRIPTION SUPABASE ---
+    const channel = supabase
+      .channel('realtime-project-tasks-board')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'project_tasks' },
+        () => {
+          void fetchProjectTasks()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timeoutId)
+      supabase.removeChannel(channel)
+    }
+  }, [fetchProjectTasks])
 
   async function handleCreateTask(e: React.FormEvent) {
     e.preventDefault()
@@ -74,7 +98,8 @@ export default function ProjectWorkspacePage() {
       description,
       status,
       priority,
-      assignee: assignee || currentUserName
+      assignee: currentUserName,
+      created_at: new Date().toISOString()
     }
 
     const { data, error } = await supabase
@@ -85,17 +110,44 @@ export default function ProjectWorkspacePage() {
     if (!error && data) {
       setTasks([data[0], ...tasks])
     } else {
-      // Fallback local insertion if database table is unavailable
       setTasks([{ id: Date.now(), ...newTask }, ...tasks])
     }
 
     setShowModal(false)
     setTitle('')
     setDescription('')
-    setAssignee('')
+    setStatus('Backlog')
+    setPriority('Medium')
   }
 
-  // Function to move task status directly from the card (Kanban flow)
+  // Fungsi Drag and Drop antar kolom Kanban
+  async function handleDragEnd(result: DropResult) {
+    const { destination, source, draggableId } = result
+
+    if (!destination) return
+    if (destination.droppableId === source.droppableId && destination.index === source.index) {
+      return
+    }
+
+    const newStatus = destination.droppableId as TaskStatus
+
+    // Update state lokal secara instan
+    const updatedTasks = tasks.map(task => {
+      if (String(task.id) === String(draggableId)) {
+        return { ...task, status: newStatus }
+      }
+      return task
+    })
+    setTasks(updatedTasks)
+
+    // Update database Supabase di tabel project_tasks
+    await supabase
+      .from('project_tasks')
+      .update({ status: newStatus })
+      .eq('id', draggableId)
+  }
+
+  // Fungsi cadangan dropdown manual
   async function handleMoveStatus(taskId: number | string, newStatus: TaskStatus) {
     setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t))
     
@@ -105,35 +157,23 @@ export default function ProjectWorkspacePage() {
       .eq('id', taskId)
   }
 
-  async function handleDeleteTask(taskId: number | string) {
-    if (!confirm('Are you sure you want to delete this task?')) return
-
-    setTasks(tasks.filter(t => t.id !== taskId))
-    await supabase
-      .from('project_tasks')
-      .delete()
-      .eq('id', taskId)
-  }
-
-  const columns: TaskStatus[] = [
-    'Backlog', 'In Progress', 'Under Review', 'Completed'
-  ]
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       
-      {/* Header & Add Task Button */}
+      {/* Header & Add Button */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold">Project Workspace Kanban 📋</h1>
-          <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Manage sprint backlog, engineering milestones, and prototype tasks.</p>
+          <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+            Drag and drop cards across columns to manage your innovation build phases.
+          </p>
         </div>
 
         <button 
           onClick={() => setShowModal(true)}
           className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] transition shadow-sm cursor-pointer"
         >
-          <i className="fa-solid fa-plus"></i> Add New Task
+          <i className="fa-solid fa-plus"></i> Add Workspace Item
         </button>
       </div>
 
@@ -141,178 +181,264 @@ export default function ProjectWorkspacePage() {
       {loading ? (
         <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading workspace tasks from database...</div>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
-          {columns.map((colStatus) => {
-            const columnTasks = tasks.filter(t => t.status === colStatus)
-            
-            return (
-              <div key={colStatus} className={`border rounded-2xl p-4 space-y-3 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-[#fff1e5]/60 border-[#d8c3ad]'}`}>
-                
-                {/* Column Header */}
-                <div className={`flex items-center justify-between pb-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/50'}`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${
-                      colStatus === 'Backlog' ? 'bg-slate-400' :
-                      colStatus === 'In Progress' ? 'bg-amber-500' :
-                      colStatus === 'Under Review' ? 'bg-blue-500' :
-                      'bg-emerald-500'
-                    }`}></span>
-                    <h3 className="font-bold text-xs uppercase tracking-wider">{colStatus}</h3>
-                  </div>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-[#d8c3ad] text-[#534434]'}`}>
-                    {columnTasks.length}
-                  </span>
-                </div>
-
-                {/* Tasks Container */}
-                <div className="space-y-3 min-h-75">
-                  {columnTasks.length === 0 ? (
-                    <div className={`text-center py-8 text-xs border border-dashed rounded-xl ${isDarkMode ? 'border-slate-800 text-slate-500' : 'border-[#d8c3ad] text-[#534434]'}`}>
-                      No tasks in {colStatus}
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+            {KANBAN_COLUMNS.map((colStatus) => {
+              const columnTasks = tasks.filter(t => (t.status || 'Backlog') === colStatus)
+              
+              return (
+                <div key={colStatus} className={`border rounded-2xl p-4 space-y-3 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-[#fff1e5]/60 border-[#d8c3ad]'}`}>
+                  
+                  {/* Column Header */}
+                  <div className={`flex items-center justify-between pb-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/50'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${
+                        colStatus === 'Backlog' ? 'bg-slate-400' :
+                        colStatus === 'In Progress' ? 'bg-amber-500' :
+                        colStatus === 'Under Review' ? 'bg-blue-500' :
+                        'bg-emerald-500'
+                      }`}></span>
+                      <h3 className="font-bold text-xs uppercase tracking-wider">{colStatus}</h3>
                     </div>
-                  ) : (
-                    columnTasks.map((task) => (
-                      <div key={task.id} className={`border rounded-xl p-4 shadow-xs space-y-3 group transition-colors ${isDarkMode ? 'bg-slate-800/40 border-slate-700/80 text-slate-100 hover:border-amber-500/50' : 'bg-white border-[#d8c3ad] text-[#221a12] hover:border-amber-400'}`}>
-                        
-                        <div className="flex items-start justify-between gap-2">
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                            task.priority === 'High' ? 'bg-rose-500/10 text-rose-500 border border-rose-500/30' :
-                            task.priority === 'Medium' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30' :
-                            (isDarkMode ? 'bg-slate-700 text-slate-300 border-slate-600' : 'bg-slate-50 text-slate-600 border border-slate-200')
-                          }`}>
-                            {task.priority || 'Medium'} Priority
-                          </span>
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-[#d8c3ad] text-[#534434]'}`}>
+                      {columnTasks.length}
+                    </span>
+                  </div>
 
-                          <button 
-                            onClick={() => handleDeleteTask(task.id)}
-                            title="Delete Task"
-                            className="text-slate-400 hover:text-rose-500 text-xs transition cursor-pointer"
-                          >
-                            <i className="fa-solid fa-trash"></i>
-                          </button>
-                        </div>
+                  {/* Droppable Area */}
+                  <Droppable droppableId={colStatus}>
+                    {(provided, snapshot) => (
+                      <div 
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className={`space-y-3 min-h-105 rounded-xl transition-colors p-1 ${
+                          snapshot.isDraggingOver ? (isDarkMode ? 'bg-slate-800/40' : 'bg-amber-100/40') : ''
+                        }`}
+                      >
+                        {columnTasks.length === 0 ? (
+                          <div className={`text-center py-12 text-xs border border-dashed rounded-xl ${isDarkMode ? 'border-slate-800 text-slate-500' : 'border-[#d8c3ad] text-[#534434]'}`}>
+                            Drop items here or promote from Idea Bank
+                          </div>
+                        ) : (
+                          columnTasks.map((task, index) => (
+                            <Draggable key={task.id} draggableId={String(task.id)} index={index}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  style={{
+                                    ...provided.draggableProps.style,
+                                  }}
+                                  className={`border rounded-xl p-4 shadow-xs space-y-3 transition-shadow ${
+                                    snapshot.isDragging ? 'shadow-xl ring-2 ring-amber-500 rotate-2' : ''
+                                  } ${isDarkMode ? 'bg-slate-800/90 border-slate-700 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/30">
+                                      {task.priority || 'Medium'} Priority
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 cursor-grab active:cursor-grabbing" title="Drag to move">
+                                      <i className="fa-solid fa-grip-vertical"></i>
+                                    </span>
+                                  </div>
 
-                        <div>
-                          <h4 className="font-bold text-xs leading-snug">{task.title}</h4>
-                          {task.description && (
-                            <p className={`text-[11px] mt-1 leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{task.description}</p>
-                          )}
-                        </div>
+                                  <div>
+                                    <h4 className="font-bold text-xs leading-snug">{task.title}</h4>
+                                    {task.description && (
+                                      <p className={`text-[11px] mt-1 leading-relaxed line-clamp-2 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{task.description}</p>
+                                    )}
+                                  </div>
 
-                        {/* Footer Card: Assignee & Quick Status Shift */}
-                        <div className={`pt-2 border-t flex items-center justify-between text-[11px] ${isDarkMode ? 'border-slate-700/80' : 'border-[#d8c3ad]/40'}`}>
-                          <span className={`font-medium truncate max-w-25 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-                            <i className="fa-regular fa-user mr-1"></i> {task.assignee || currentUserName}
-                          </span>
+                                  {/* Footer Card: Assignee & Guide & Status Dropdown */}
+                                  <div className={`pt-2 border-t space-y-2 text-[11px] ${isDarkMode ? 'border-slate-700/80' : 'border-[#d8c3ad]/40'}`}>
+                                    <div className="flex items-center justify-between">
+                                      <span className={`font-medium truncate max-w-28 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+                                        <i className="fa-regular fa-user mr-1"></i> {task.assignee || currentUserName}
+                                      </span>
 
-                          {/* Dropdown to move task between columns */}
-                          <select
-                            value={task.status}
-                            onChange={(e) => handleMoveStatus(task.id, e.target.value as TaskStatus)}
-                            className={`text-[10px] rounded px-1.5 py-1 outline-none font-semibold cursor-pointer border transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-200 hover:border-amber-500' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#221a12] hover:border-amber-500'}`}
-                          >
-                            <option value="Backlog">Backlog</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Under Review">Under Review</option>
-                            <option value="Completed">Completed</option>
-                          </select>
-                        </div>
+                                      <button 
+                                        onClick={() => setSelectedProjectDetail(task)}
+                                        className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${isDarkMode ? 'border-slate-700 hover:bg-slate-700 text-amber-400' : 'border-[#d8c3ad] hover:bg-amber-100 text-[#534434]'}`}
+                                      >
+                                        <i className="fa-solid fa-circle-info mr-1"></i> Guide
+                                      </button>
+                                    </div>
 
+                                    {/* Dropdown Cadangan */}
+                                    <select
+                                      value={task.status || 'Backlog'}
+                                      onChange={(e) => handleMoveStatus(task.id, e.target.value as TaskStatus)}
+                                      className={`w-full text-[10px] rounded px-1.5 py-1.5 outline-none font-semibold cursor-pointer border transition ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-200 hover:border-amber-500' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#221a12] hover:border-amber-500'}`}
+                                    >
+                                      <option value="Backlog">Move: Backlog</option>
+                                      <option value="In Progress">Move: In Progress</option>
+                                      <option value="Under Review">Move: Under Review</option>
+                                      <option value="Completed">Move: Completed</option>
+                                    </select>
+                                  </div>
+
+                                </div>
+                              )}
+                            </Draggable>
+                          ))
+                        )}
+                        {provided.placeholder}
                       </div>
-                    ))
-                  )}
-                </div>
+                    )}
+                  </Droppable>
 
+                </div>
+              )
+            })}
+          </div>
+        </DragDropContext>
+      )}
+
+      {/* ================= MODAL DETAIL GUIDE 4-PART ================= */}
+      {selectedProjectDetail && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className={`rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-5 border max-h-[90vh] overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+            
+            <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                  Status: {selectedProjectDetail.status}
+                </span>
+                <h3 className="font-bold text-lg mt-1">{selectedProjectDetail.title}</h3>
               </div>
-            )
-          })}
+              <button onClick={() => setSelectedProjectDetail(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <i className="fa-solid fa-xmark text-xl"></i>
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                  <i className="fa-solid fa-circle-exclamation"></i> 1. The Problem (What issue are we solving?)
+                </h4>
+                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                  {selectedProjectDetail.problem_statement || selectedProjectDetail.description || "Everyday challenge or inefficiency encountered by students that requires an innovative prototype solution."}
+                </p>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                  <i className="fa-solid fa-gears"></i> 2. How It Works (The Solution)
+                </h4>
+                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                  {selectedProjectDetail.how_it_works || "A concise explanation of how the mechanism or software logic operates to solve the defined problem simply."}
+                </p>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                  <i className="fa-solid fa-toolbox"></i> 3. Materials Needed (Mini Toolkit)
+                </h4>
+                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                  {selectedProjectDetail.materials_needed || "List of accessible tools or components (e.g., used cardboard, tape, sensors, micro:bit, or Scratch/Figma account)."}
+                </p>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                <h4 className="font-bold text-amber-500 mb-1.5 flex items-center gap-2">
+                  <i className="fa-solid fa-list-check"></i> 4. Step-by-Step Build Guide
+                </h4>
+                <p className={`whitespace-pre-line ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>
+                  {selectedProjectDetail.step_by_step_guide || "1. Draft initial sketches or wireframe layouts.\n2. Gather required physical or digital toolkits.\n3. Build the core functional prototype.\n4. Test performance and refine for presentation."}
+                </p>
+              </div>
+            </div>
+
+            <div className={`flex items-center justify-between pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
+              <span className="text-[11px] text-slate-400">Assigned to: <b>{selectedProjectDetail.assignee || currentUserName}</b></span>
+              <button 
+                type="button" 
+                onClick={() => setSelectedProjectDetail(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-amber-500 text-slate-950 hover:bg-amber-400 cursor-pointer transition"
+              >
+                Close Guide
+              </button>
+            </div>
+
+          </div>
         </div>
       )}
 
-      {/* Modal New Task */}
+      {/* Modal Add Workspace Item */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
             <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-              <h3 className="font-bold text-lg">Add New Project Task 📝</h3>
+              <h3 className="font-bold text-lg">Add New Workspace Item 📝</h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <i className="fa-solid fa-xmark text-lg"></i>
               </button>
             </div>
 
-            <form onSubmit={handleCreateTask} className="space-y-4">
+            <form onSubmit={handleCreateTask} className="space-y-4 text-xs">
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Task Title</label>
+                <label className={`block font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Task Title *</label>
                 <input 
                   type="text" 
                   value={title} 
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Integrate ESP32 Wi-Fi telemetry module" 
+                  placeholder="e.g. IoT Soil Moisture Sensor Prototype" 
                   required
-                  className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
+                  className={`w-full rounded-xl px-3 py-2.5 outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                 />
               </div>
 
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Description</label>
+                <label className={`block font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Short Description *</label>
                 <textarea 
                   value={description} 
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Provide technical implementation details..." 
-                  rows={3}
-                  className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
+                  placeholder="Provide brief objective of this build phase..." 
+                  rows={2}
+                  required
+                  className={`w-full rounded-xl px-3 py-2.5 outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
                 ></textarea>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Initial Status</label>
-                  <select 
-                    value={status} 
-                    onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                    className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
-                  >
-                    <option value="Backlog">Backlog</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Under Review">Under Review</option>
-                    <option value="Completed">Completed</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Priority</label>
-                  <select 
-                    value={priority} 
-                    onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                    className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
-                  >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Assignee</label>
-                  <input 
-                    type="text" 
-                    value={assignee} 
-                    onChange={(e) => setAssignee(e.target.value)}
-                    placeholder={currentUserName} 
-                    className={`w-full rounded-xl px-3 py-2 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
-                  />
-                </div>
+              <div>
+                <label className={`block font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Priority</label>
+                <select 
+                  value={priority} 
+                  onChange={(e) => setPriority(e.target.value)}
+                  className={`w-full rounded-xl px-3 py-2.5 outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
+                >
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={`block font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Initial Kanban Column</label>
+                <select 
+                  value={status} 
+                  onChange={(e) => setStatus(e.target.value as TaskStatus)}
+                  className={`w-full rounded-xl px-3 py-2.5 outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
+                >
+                  <option value="Backlog">Backlog</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Under Review">Under Review</option>
+                  <option value="Completed">Completed</option>
+                </select>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
                 <button 
                   type="button" 
                   onClick={() => setShowModal(false)}
-                  className={`px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+                  className={`px-4 py-2 font-semibold rounded-xl cursor-pointer transition ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
-                  className="px-5 py-2 text-xs font-semibold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer"
+                  className="px-5 py-2 font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer"
                 >
                   Create Task
                 </button>

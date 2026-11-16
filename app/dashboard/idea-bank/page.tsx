@@ -8,7 +8,7 @@ import { useTheme } from '@/context/ThemeContext'
 type Idea = {
   id: number
   title?: string
-  description?: string // Short Summary
+  description?: string
   status?: string
   tags?: string[] | string | null
   author_name?: string
@@ -29,15 +29,12 @@ export default function IdeaBankPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   
-  // State for Edit mode & Current User Session
   const [editingId, setEditingId] = useState<number | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<'student' | 'mentor'>('student')
 
-  // State for Detail / Development Guide Modal
   const [selectedIdeaDetail, setSelectedIdeaDetail] = useState<Idea | null>(null)
 
-  // Form state (English-first & 4-part structured)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState('Raw Concept')
@@ -51,7 +48,6 @@ export default function IdeaBankPage() {
   const fetchIdeas = useCallback(async () => {
     setLoading(true)
 
-    // Cek session user yang sedang login untuk menentukan role
     const { data: { session } } = await supabase.auth.getSession()
     const email = session?.user?.email || ''
     if (email.includes('mentor') || email === 'plego@gmail.com') {
@@ -60,7 +56,6 @@ export default function IdeaBankPage() {
       setCurrentUserRole('student')
     }
 
-    // Mengambil data dan diurutkan berdasarkan abjad judul (title) dari A - Z
     const { data } = await supabase
       .from('ideas')
       .select('*')
@@ -84,7 +79,6 @@ export default function IdeaBankPage() {
       void loadInitialData()
     }, 0)
 
-    // --- REALTIME SUBSCRIPTION SUPABASE ---
     const channel = supabase
       .channel('realtime-idea-bank-page')
       .on(
@@ -110,12 +104,11 @@ export default function IdeaBankPage() {
     }, 4000)
   }
 
-  // Open Create Modal
   function handleOpenCreateModal() {
     setEditingId(null)
     setTitle('')
     setDescription('')
-    setStatus('Raw Concept') // Default aman untuk siswa
+    setStatus('Raw Concept')
     setTags('')
     setSketchImageUrl('')
     setProblemStatement('')
@@ -148,7 +141,6 @@ export default function IdeaBankPage() {
     const userId = session?.user?.id || null
     const studentName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || 'Student Innovator'
 
-    // Proteksi backend: jika user adalah student, paksa status hanya 'Raw Concept' atau 'Under Validation'
     let finalStatus = status
     if (currentUserRole === 'student') {
       if (finalStatus !== 'Under Validation') {
@@ -223,7 +215,6 @@ export default function IdeaBankPage() {
     }
   }
 
-  // Fungsi Promote to Project Workspace
   async function handlePromoteIdea(item: Idea) {
     if (item.status !== 'Approved') {
       showToast('Only approved ideas can be promoted to the project workspace!')
@@ -231,24 +222,21 @@ export default function IdeaBankPage() {
     }
 
     const { data: { session } } = await supabase.auth.getSession()
-    const userId = session?.user?.id || null
+    const currentUserId = session?.user?.id || null
+    const currentName = session?.user?.user_metadata?.full_name || item.author_name || 'Desti A.'
 
     const projectPayload = {
       title: item.title,
-      description: item.description,
-      status: 'In Progress',
-      tags: item.tags,
-      author_name: item.author_name,
-      author_id: userId || item.author_id,
-      problem_statement: item.problem_statement,
-      how_it_works: item.how_it_works,
-      materials_needed: item.materials_needed,
-      step_by_step_guide: item.step_by_step_guide,
+      description: item.description || item.problem_statement || "Promoted from Idea Bank",
+      status: 'Backlog',
+      priority: 'Medium',
+      assignee: currentName,
+      user_id: currentUserId,
       created_at: new Date().toISOString()
     }
 
     const { error: insertError } = await supabase
-      .from('projects')
+      .from('project_tasks')
       .insert([projectPayload])
 
     if (insertError) {
@@ -256,7 +244,6 @@ export default function IdeaBankPage() {
       return
     }
 
-    // Update status ide di Idea Bank menjadi 'Prototype'
     await supabase
       .from('ideas')
       .update({ status: 'Prototype' })
@@ -266,14 +253,12 @@ export default function IdeaBankPage() {
     fetchIdeas()
   }
 
-  // Dynamic Statistics
   const totalIdeasCount = ideas.length
   const rawConceptCount = ideas.filter(i => i.status === 'Raw Concept').length
   const underValidationCount = ideas.filter(i => i.status === 'Under Validation').length
   const approvedCount = ideas.filter(i => i.status === 'Approved').length
   const prototypeCount = ideas.filter(i => i.status === 'Prototype').length
 
-  // Filter & Search Logic
   const filteredIdeas = ideas.filter(item => {
     const matchesTab = activeTab === 'All Ideas' || item.status === activeTab
     const matchesSearch = (item.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -283,8 +268,6 @@ export default function IdeaBankPage() {
 
   return (
     <div className="space-y-6 relative">
-      
-      {/* Top Header & Search Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-xs"></i>
@@ -305,7 +288,6 @@ export default function IdeaBankPage() {
         </button>
       </div>
 
-      {/* Title & Description */}
       <div>
         <h1 className="text-2xl font-extrabold">Idea Bank 💡</h1>
         <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
@@ -313,36 +295,29 @@ export default function IdeaBankPage() {
         </p>
       </div>
 
-      {/* Stats Cards Row */}
       <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
           <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Total Ideas</div>
           <div className="text-2xl font-black">{totalIdeasCount}</div>
-          <div className="text-[11px] text-emerald-600 font-semibold">+ active cohort</div>
         </div>
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
           <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Raw Concepts</div>
           <div className="text-2xl font-black">{rawConceptCount}</div>
-          <div className="text-[11px] text-slate-500 font-semibold">Early-stage concepts</div>
         </div>
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
           <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Under Validation</div>
           <div className="text-2xl font-black">{underValidationCount}</div>
-          <div className="text-[11px] text-amber-600 font-semibold">Awaiting mentor input</div>
         </div>
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
           <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Approved</div>
           <div className="text-2xl font-black">{approvedCount}</div>
-          <div className="text-[11px] text-blue-500 font-semibold">Ready for execution</div>
         </div>
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
           <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Prototypes</div>
           <div className="text-2xl font-black">{prototypeCount}</div>
-          <div className="text-[11px] text-indigo-500 font-semibold">Active build phase</div>
         </div>
       </div>
 
-      {/* Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div className={`flex flex-wrap items-center gap-1.5 p-1 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-[#fff1e5] border-[#d8c3ad]'}`}>
           {['All Ideas', 'Raw Concept', 'Under Validation', 'Approved', 'Prototype'].map((tab) => (
@@ -361,13 +336,10 @@ export default function IdeaBankPage() {
         </div>
       </div>
 
-      {/* Ideas Grid List */}
       {loading ? (
         <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading ideas from database...</div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-
-          {/* CTA Box "Have a new idea?" */}
           <div 
             onClick={handleOpenCreateModal}
             className={`border-2 border-dashed rounded-2xl p-6 text-center flex flex-col items-center justify-center cursor-pointer transition space-y-3 group min-h-60 ${isDarkMode ? 'border-amber-500/40 bg-slate-900/50 hover:bg-slate-900' : 'border-amber-300 bg-amber-50/40 hover:bg-amber-50/80'}`}
@@ -386,14 +358,11 @@ export default function IdeaBankPage() {
             </span>
           </div>
 
-          
           {filteredIdeas.map((item) => {
             const isUserCreated = item.author_name !== 'InnovaSeed';
 
             return (
               <div key={item.id} className={`border rounded-2xl p-6 shadow-xs space-y-4 relative group flex flex-col justify-between transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
-                
-                {/* Edit & Delete Buttons (Hanya muncul jika bukan admin "InnovaSeed") */}
                 {isUserCreated && (
                   <div className="absolute top-5 right-5 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition">
                     <button 
@@ -430,7 +399,6 @@ export default function IdeaBankPage() {
                     <p className={`text-xs mt-1 leading-relaxed line-clamp-3 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{item.description}</p>
                   </div>
 
-                  {/* Optional Sketch Preview Thumbnail */}
                   {item.sketch_image_url && (
                     <div className="h-32 w-full rounded-xl overflow-hidden border border-slate-700/50 bg-slate-950/20 relative">
                       <Image
@@ -446,7 +414,6 @@ export default function IdeaBankPage() {
                 </div>
 
                 <div className="space-y-3 pt-3">
-                  {/* Tags */}
                   {item.tags && (Array.isArray(item.tags) ? item.tags.length > 0 : String(item.tags).trim() !== '') ? (
                     <div className="flex flex-wrap gap-1.5">
                       {(Array.isArray(item.tags) ? item.tags : String(item.tags).replace(/[{}]/g, '').split(',')).map((tag: string, idx: number) => (
@@ -457,7 +424,6 @@ export default function IdeaBankPage() {
                     </div>
                   ) : null}
 
-                  {/* Detail & Promote Buttons */}
                   <div className="flex items-center gap-2 pt-2">
                     <button 
                       onClick={() => setSelectedIdeaDetail(item)}
@@ -477,7 +443,6 @@ export default function IdeaBankPage() {
                     )}
                   </div>
 
-                  {/* Author Name */}
                   <div className={`flex items-center justify-between pt-3 border-t text-xs ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
                     <div className="flex items-center gap-2">
                       <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-600 font-bold grid place-items-center text-[10px]">
@@ -487,20 +452,16 @@ export default function IdeaBankPage() {
                     </div>
                   </div>
                 </div>
-
               </div>
             );
           })}
-
         </div>
       )}
 
-      {/* ================= 1. DETAIL & GUIDE MODAL (4-Part Structured) ================= */}
+      {/* Modal Detail & Guide */}
       {selectedIdeaDetail && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-5 border max-h-[90vh] overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
-            
-            {/* Header */}
             <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
               <div>
                 <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
@@ -513,7 +474,6 @@ export default function IdeaBankPage() {
               </button>
             </div>
 
-            {/* Optional Sketch Preview */}
             {selectedIdeaDetail.sketch_image_url && (
               <div className="relative h-48 rounded-xl overflow-hidden border border-slate-700/50">
                 <Image
@@ -527,10 +487,7 @@ export default function IdeaBankPage() {
               </div>
             )}
 
-            {/* 4-Part Structured Content */}
             <div className="space-y-3.5 text-xs">
-              
-              {/* 1. The Problem */}
               <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
                 <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
                   <i className="fa-solid fa-circle-exclamation"></i> 1. The Problem (What issue are we solving?)
@@ -540,7 +497,6 @@ export default function IdeaBankPage() {
                 </p>
               </div>
 
-              {/* 2. How It Works */}
               <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
                 <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
                   <i className="fa-solid fa-gears"></i> 2. How It Works (The Solution)
@@ -550,7 +506,6 @@ export default function IdeaBankPage() {
                 </p>
               </div>
 
-              {/* 3. Materials Needed */}
               <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
                 <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
                   <i className="fa-solid fa-toolbox"></i> 3. Materials Needed (Mini Toolkit)
@@ -560,7 +515,6 @@ export default function IdeaBankPage() {
                 </p>
               </div>
 
-              {/* 4. Step-by-Step Build Guide */}
               <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
                 <h4 className="font-bold text-amber-500 mb-1.5 flex items-center gap-2">
                   <i className="fa-solid fa-list-check"></i> 4. Step-by-Step Build Guide
@@ -569,10 +523,8 @@ export default function IdeaBankPage() {
                   {selectedIdeaDetail.step_by_step_guide || "1. Draft initial sketches or wireframe layouts.\n2. Gather required physical or digital toolkits.\n3. Build the core functional prototype.\n4. Test performance and refine for presentation."}
                 </p>
               </div>
-
             </div>
 
-            {/* Modal Footer */}
             <div className={`flex items-center justify-between pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
               <button 
                 type="button" 
@@ -596,16 +548,14 @@ export default function IdeaBankPage() {
                 </button>
               )}
             </div>
-
           </div>
         </div>
       )}
 
-      {/* ================= 2. CAPTURE & EDIT IDEA MODAL ================= */}
+      {/* Modal Create & Edit */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-xl w-full p-6 shadow-xl space-y-4 border max-h-[90vh] overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
-            
             <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
               <h3 className="font-bold text-lg text-amber-500">
                 {editingId ? 'Edit Innovation Idea ✏️' : 'Capture New Innovation Idea 💡'}
@@ -750,12 +700,11 @@ export default function IdeaBankPage() {
                 </button>
               </div>
             </form>
-
           </div>
         </div>
       )}
 
-      {/* Custom Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal */}
       {deleteConfirmId !== null && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
@@ -796,12 +745,11 @@ export default function IdeaBankPage() {
             <i className="fa-solid fa-check text-[10px]"></i>
           </span>
           <div>
-            <b className="block text-slate-100 font-bold">InnovaSeed v2 Notification</b>
+            <b className="block text-slate-100 font-bold">InnovaSeed Notification</b>
             <p className="text-slate-400">{toastMessage}</p>
           </div>
         </div>
       )}
-
     </div>
   )
 }
