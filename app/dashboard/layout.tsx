@@ -60,7 +60,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function getDashboardData() {
-      // Langsung cek sesi aktif dari Supabase Auth secara murni
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         router.push('/login')
@@ -253,7 +252,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   return (
     <div className={`flex min-h-screen transition-colors duration-200 ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#fff8f4] text-[#221a12]'}`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         body, button, input, select, textarea { font-family: 'Plus Jakarta Sans', sans-serif; }
       `}</style>
 
@@ -264,8 +263,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Global Sidebar */}
-      <aside className={`hidden lg:flex flex-col w-64 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`}>
-        <div className="flex items-center gap-3 mb-5">
+      <aside className={`hidden lg:flex flex-col w-64 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>        <div className="flex items-center gap-3 mb-5">
           <Image
             src="/InnovaSeed-Logo.png"
             alt="InnovaSeed Logo"
@@ -296,8 +294,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Navigation Menu */}
-        <nav className="space-y-1 text-sm">
-          {isJudgeArea ? (
+        <nav className="space-y-1 text-sm font-sans" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>          {isJudgeArea ? (
             <>
               <Link href="/dashboard/judges/queue" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/judges/queue' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
                 <i className="fa-solid fa-clipboard-list w-4 text-center"></i>Assigned Evaluation Queue
@@ -336,7 +333,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                   onClick={() => setIsCompetitionOpen(!isCompetitionOpen)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
                     pathname?.includes('/competition')
-                      ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] border-l-[3px] border-[#F59E0B]')
+                      ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]')
                       : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')
                   }`}
                 >

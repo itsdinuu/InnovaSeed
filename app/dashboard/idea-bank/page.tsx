@@ -1,5 +1,6 @@
 "use client"
 
+import Image from 'next/image'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
@@ -7,12 +8,16 @@ import { useTheme } from '@/context/ThemeContext'
 type Idea = {
   id: number
   title?: string
-  description?: string
+  description?: string // Short Summary
   status?: string
   tags?: string[] | string | null
-  feasibility_score?: number | string | null
-  votes?: number
   author_name?: string
+  author_id?: string
+  sketch_image_url?: string | null
+  problem_statement?: string | null
+  how_it_works?: string | null
+  materials_needed?: string | null
+  step_by_step_guide?: string | null
 }
 
 export default function IdeaBankPage() {
@@ -24,23 +29,42 @@ export default function IdeaBankPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   
-  // State for Edit mode
+  // State for Edit mode & Current User Session
   const [editingId, setEditingId] = useState<number | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<'student' | 'mentor'>('student')
 
-  // Form state
+  // State for Detail / Development Guide Modal
+  const [selectedIdeaDetail, setSelectedIdeaDetail] = useState<Idea | null>(null)
+
+  // Form state (English-first & 4-part structured)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState('Raw Concept')
   const [tags, setTags] = useState('')
-  const [feasibilityScore, setFeasibilityScore] = useState('0')
+  const [sketchImageUrl, setSketchImageUrl] = useState('')
+  const [problemStatement, setProblemStatement] = useState('')
+  const [howItWorks, setHowItWorks] = useState('')
+  const [materialsNeeded, setMaterialsNeeded] = useState('')
+  const [stepByStepGuide, setStepByStepGuide] = useState('')
 
   const fetchIdeas = useCallback(async () => {
     setLoading(true)
+
+    // Cek session user yang sedang login untuk menentukan role
+    const { data: { session } } = await supabase.auth.getSession()
+    const email = session?.user?.email || ''
+    if (email.includes('mentor') || email === 'plego@gmail.com') {
+      setCurrentUserRole('mentor')
+    } else {
+      setCurrentUserRole('student')
+    }
+
+    // Mengambil data dan diurutkan berdasarkan abjad judul (title) dari A - Z
     const { data } = await supabase
       .from('ideas')
       .select('*')
-      .order('id', { ascending: false })
+      .order('title', { ascending: true })
 
     if (data) {
       setIdeas(data)
@@ -51,13 +75,13 @@ export default function IdeaBankPage() {
   useEffect(() => {
     let isCancelled = false
 
-    const loadInitialIdeas = async () => {
+    const loadInitialData = async () => {
       if (isCancelled) return
       await fetchIdeas()
     }
 
     const timeoutId = setTimeout(() => {
-      void loadInitialIdeas()
+      void loadInitialData()
     }, 0)
 
     // --- REALTIME SUBSCRIPTION SUPABASE ---
@@ -91,9 +115,13 @@ export default function IdeaBankPage() {
     setEditingId(null)
     setTitle('')
     setDescription('')
-    setStatus('Raw Concept')
+    setStatus('Raw Concept') // Default aman untuk siswa
     setTags('')
-    setFeasibilityScore('0')
+    setSketchImageUrl('')
+    setProblemStatement('')
+    setHowItWorks('')
+    setMaterialsNeeded('')
+    setStepByStepGuide('')
     setShowModal(true)
   }
 
@@ -103,7 +131,11 @@ export default function IdeaBankPage() {
     setDescription(item.description || '')
     setStatus(item.status || 'Raw Concept')
     setTags(Array.isArray(item.tags) ? item.tags.join(', ') : (item.tags || ''))
-    setFeasibilityScore(item.feasibility_score?.toString() || '0')
+    setSketchImageUrl(item.sketch_image_url || '')
+    setProblemStatement(item.problem_statement || '')
+    setHowItWorks(item.how_it_works || '')
+    setMaterialsNeeded(item.materials_needed || '')
+    setStepByStepGuide(item.step_by_step_guide || '')
     setShowModal(true)
   }
 
@@ -112,18 +144,34 @@ export default function IdeaBankPage() {
     if (!title.trim()) return
 
     const formattedTags = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []
-    const parsedScore = parseFloat(feasibilityScore) || 0
+    const { data: { session } } = await supabase.auth.getSession()
+    const userId = session?.user?.id || null
+    const studentName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || 'Student Innovator'
+
+    // Proteksi backend: jika user adalah student, paksa status hanya 'Raw Concept' atau 'Under Validation'
+    let finalStatus = status
+    if (currentUserRole === 'student') {
+      if (finalStatus !== 'Under Validation') {
+        finalStatus = 'Raw Concept'
+      }
+    }
+
+    const payload = {
+      title,
+      description,
+      status: finalStatus,
+      tags: formattedTags,
+      sketch_image_url: sketchImageUrl.trim() || null,
+      problem_statement: problemStatement.trim() || null,
+      how_it_works: howItWorks.trim() || null,
+      materials_needed: materialsNeeded.trim() || null,
+      step_by_step_guide: stepByStepGuide.trim() || null,
+    }
 
     if (editingId) {
       const { error } = await supabase
         .from('ideas')
-        .update({
-          title,
-          description,
-          status,
-          tags: formattedTags,
-          feasibility_score: parsedScore
-        })
+        .update(payload)
         .eq('id', editingId)
 
       if (!error) {
@@ -134,22 +182,15 @@ export default function IdeaBankPage() {
         showToast('Failed to update idea: ' + error.message)
       }
     } else {
-      const { data: { session } } = await supabase.auth.getSession()
-      const userId = session?.user?.id || null
-      const leadName = session?.user?.user_metadata?.lead_name || 'Innovator'
-
-      const { error } = await supabase.from('ideas').insert([
-        {
-          title,
-          description,
-          status,
-          tags: formattedTags,
-          author_id: userId,
-          author_name: leadName,
-          votes: 0,
-          feasibility_score: parsedScore
-        }
-      ])
+      const { error } = await supabase
+        .from('ideas')
+        .insert([
+          {
+            ...payload,
+            author_id: userId,
+            author_name: studentName
+          }
+        ])
 
       if (!error) {
         setShowModal(false)
@@ -161,9 +202,9 @@ export default function IdeaBankPage() {
     }
   }
 
-function handleDeleteIdea(id: number) {
-  setDeleteConfirmId(id) // Membuka modal konfirmasi custom
-}
+  function handleDeleteIdea(id: number) {
+    setDeleteConfirmId(id)
+  }
 
   async function executeDelete() {
     if (!deleteConfirmId) return
@@ -181,26 +222,56 @@ function handleDeleteIdea(id: number) {
       showToast('Failed to delete idea: ' + error.message)
     }
   }
-  async function handleVote(item: Idea) {
-    const newVotes = (item.votes || 0) + 1
-    const { error } = await supabase
+
+  // Fungsi Promote to Project Workspace
+  async function handlePromoteIdea(item: Idea) {
+    if (item.status !== 'Approved') {
+      showToast('Only approved ideas can be promoted to the project workspace!')
+      return
+    }
+
+    const { data: { session } } = await supabase.auth.getSession()
+    const userId = session?.user?.id || null
+
+    const projectPayload = {
+      title: item.title,
+      description: item.description,
+      status: 'In Progress',
+      tags: item.tags,
+      author_name: item.author_name,
+      author_id: userId || item.author_id,
+      problem_statement: item.problem_statement,
+      how_it_works: item.how_it_works,
+      materials_needed: item.materials_needed,
+      step_by_step_guide: item.step_by_step_guide,
+      created_at: new Date().toISOString()
+    }
+
+    const { error: insertError } = await supabase
+      .from('projects')
+      .insert([projectPayload])
+
+    if (insertError) {
+      showToast('Failed to promote idea: ' + insertError.message)
+      return
+    }
+
+    // Update status ide di Idea Bank menjadi 'Prototype'
+    await supabase
       .from('ideas')
-      .update({ votes: newVotes })
+      .update({ status: 'Prototype' })
       .eq('id', item.id)
 
-    if (!error) {
-      setIdeas(ideas.map(i => i.id === item.id ? { ...i, votes: newVotes } : i))
-      showToast('Upvote recorded!')
-    }
+    showToast(`Successfully promoted "${item.title}" to Project Workspace! 🚀`)
+    fetchIdeas()
   }
 
   // Dynamic Statistics
   const totalIdeasCount = ideas.length
+  const rawConceptCount = ideas.filter(i => i.status === 'Raw Concept').length
   const underValidationCount = ideas.filter(i => i.status === 'Under Validation').length
+  const approvedCount = ideas.filter(i => i.status === 'Approved').length
   const prototypeCount = ideas.filter(i => i.status === 'Prototype').length
-  const avgScore = ideas.length > 0 
-    ? (ideas.reduce((acc, curr) => acc + Number(curr.feasibility_score || 0), 0) / ideas.length).toFixed(1) 
-    : '0.0'
 
   // Filter & Search Logic
   const filteredIdeas = ideas.filter(item => {
@@ -238,16 +309,21 @@ function handleDeleteIdea(id: number) {
       <div>
         <h1 className="text-2xl font-extrabold">Idea Bank 💡</h1>
         <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-          Capture, vote and validate concepts before they become prototypes.
+          Capture and validate concepts before they become prototypes.
         </p>
       </div>
 
       {/* Stats Cards Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
           <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Total Ideas</div>
           <div className="text-2xl font-black">{totalIdeasCount}</div>
           <div className="text-[11px] text-emerald-600 font-semibold">+ active cohort</div>
+        </div>
+        <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
+          <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Raw Concepts</div>
+          <div className="text-2xl font-black">{rawConceptCount}</div>
+          <div className="text-[11px] text-slate-500 font-semibold">Early-stage concepts</div>
         </div>
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
           <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Under Validation</div>
@@ -255,18 +331,18 @@ function handleDeleteIdea(id: number) {
           <div className="text-[11px] text-amber-600 font-semibold">Awaiting mentor input</div>
         </div>
         <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
-          <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Promoted to Prototype</div>
+          <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Approved</div>
+          <div className="text-2xl font-black">{approvedCount}</div>
+          <div className="text-[11px] text-blue-500 font-semibold">Ready for execution</div>
+        </div>
+        <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
+          <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Prototypes</div>
           <div className="text-2xl font-black">{prototypeCount}</div>
           <div className="text-[11px] text-indigo-500 font-semibold">Active build phase</div>
         </div>
-        <div className={`border rounded-2xl p-5 shadow-xs space-y-1 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
-          <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Avg. Self-Assessed Score</div>
-          <div className="text-2xl font-black">{avgScore} <span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-[#534434]'}`}>/10</span></div>
-          <div className={`text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Student evaluated</div>
-        </div>
       </div>
 
-      {/* Filter Tabs & Sort Bar */}
+      {/* Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div className={`flex flex-wrap items-center gap-1.5 p-1 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-[#fff1e5] border-[#d8c3ad]'}`}>
           {['All Ideas', 'Raw Concept', 'Under Validation', 'Approved', 'Prototype'].map((tab) => (
@@ -283,10 +359,6 @@ function handleDeleteIdea(id: number) {
             </button>
           ))}
         </div>
-
-        <div className={`text-xs font-semibold flex items-center gap-1 border px-3 py-1.5 rounded-xl shadow-xs transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-[#d8c3ad] text-[#534434]'}`}>
-          <i className="fa-solid fa-arrow-down-wide-short text-amber-500"></i> Most Voted
-        </div>
       </div>
 
       {/* Ideas Grid List */}
@@ -294,82 +366,6 @@ function handleDeleteIdea(id: number) {
         <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading ideas from database...</div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-          
-          {filteredIdeas.map((item) => (
-            <div key={item.id} className={`border rounded-2xl p-6 shadow-xs space-y-4 relative group flex flex-col justify-between transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
-              
-              {/* Edit & Delete Buttons */}
-              <div className="absolute top-5 right-5 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition">
-                <button 
-                  onClick={() => handleOpenEditModal(item)}
-                  title="Edit Idea"
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs transition cursor-pointer ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-amber-500/20 hover:text-amber-400' : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-600'}`}
-                >
-                  <i className="fa-solid fa-pen"></i>
-                </button>
-                <button 
-                  onClick={() => handleDeleteIdea(item.id)}
-                  title="Delete Idea"
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs transition cursor-pointer ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-rose-500/20 hover:text-rose-400' : 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600'}`}
-                >
-                  <i className="fa-solid fa-trash"></i>
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between pr-14">
-                  <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-md ${
-                    item.status === 'Prototype' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' :
-                    item.status === 'Under Validation' ? 'bg-amber-500/10 text-amber-600 border border-amber-500/30' :
-                    item.status === 'Approved' ? 'bg-blue-500/10 text-blue-600 border border-blue-500/30' :
-                    (isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-700')
-                  }`}>
-                    {item.status || 'Raw Concept'}
-                  </span>
-                </div>
-
-                <div>
-                  <h3 className="font-bold text-base">{item.title}</h3>
-                  <p className={`text-xs mt-1 leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{item.description}</p>
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-3">
-                {/* Tags */}
-                {item.tags && item.tags.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {(Array.isArray(item.tags) ? item.tags : [item.tags]).map((tag: string, idx: number) => (
-                      <span key={idx} className={`text-[10px] px-2 py-0.5 rounded font-medium ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-[#fff1e5] text-[#534434]'}`}>
-                        #{tag.trim()}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-
-                {/* Footer Card: Author, Votes & Score */}
-                <div className={`flex items-center justify-between pt-3 border-t text-xs ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-600 font-bold grid place-items-center text-[10px]">
-                      {(item.author_name || 'I').charAt(0).toUpperCase()}
-                    </span>
-                    <span className={`font-medium truncate max-w-25 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{item.author_name || 'Innovator'}</span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={() => handleVote(item)}
-                      className="flex items-center gap-1 font-semibold hover:text-amber-500 transition cursor-pointer"
-                      title="Click to Upvote"
-                    >
-                      <i className="fa-solid fa-caret-up text-amber-500 text-sm"></i> {item.votes || 0} votes
-                    </button>
-                    <span className={`font-bold px-2 py-0.5 rounded border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-[#fff1e5] border-[#d8c3ad]'}`}>{item.feasibility_score ?? '0.0'}</span>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          ))}
 
           {/* CTA Box "Have a new idea?" */}
           <div 
@@ -382,7 +378,7 @@ function handleDeleteIdea(id: number) {
             <div>
               <h3 className="font-bold text-sm">Have a new idea?</h3>
               <p className={`text-[11px] mt-1 max-w-xs px-2 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-                Describe the problem, your hypothesis and the impact. Submit your self-assessment.
+                Describe the problem, your hypothesis and the impact.
               </p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold bg-[#F59E0B] text-[#0F172A] shadow-sm">
@@ -390,15 +386,228 @@ function handleDeleteIdea(id: number) {
             </span>
           </div>
 
+          
+          {filteredIdeas.map((item) => {
+            const isUserCreated = item.author_name !== 'InnovaSeed';
+
+            return (
+              <div key={item.id} className={`border rounded-2xl p-6 shadow-xs space-y-4 relative group flex flex-col justify-between transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
+                
+                {/* Edit & Delete Buttons (Hanya muncul jika bukan admin "InnovaSeed") */}
+                {isUserCreated && (
+                  <div className="absolute top-5 right-5 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition">
+                    <button 
+                      onClick={() => handleOpenEditModal(item)}
+                      title="Edit Idea"
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs transition cursor-pointer ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-amber-500/20 hover:text-amber-400' : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-600'}`}
+                    >
+                      <i className="fa-solid fa-pen"></i>
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteIdea(item.id)}
+                      title="Delete Idea"
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs transition cursor-pointer ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-rose-500/20 hover:text-rose-400' : 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600'}`}
+                    >
+                      <i className="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between pr-14">
+                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-md ${
+                      item.status === 'Prototype' ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/30' :
+                      item.status === 'Approved' ? 'bg-blue-500/10 text-blue-600 border border-blue-500/30' :
+                      item.status === 'Under Validation' ? 'bg-amber-500/10 text-amber-600 border border-amber-500/30' :
+                      (isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-700')
+                    }`}>
+                      {item.status || 'Raw Concept'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="font-bold text-base">{item.title}</h3>
+                    <p className={`text-xs mt-1 leading-relaxed line-clamp-3 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{item.description}</p>
+                  </div>
+
+                  {/* Optional Sketch Preview Thumbnail */}
+                  {item.sketch_image_url && (
+                    <div className="h-32 w-full rounded-xl overflow-hidden border border-slate-700/50 bg-slate-950/20 relative">
+                      <Image
+                        src={item.sketch_image_url}
+                        alt="Sketch preview"
+                        fill
+                        sizes="(max-width: 768px) 100vw, 33vw"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3 pt-3">
+                  {/* Tags */}
+                  {item.tags && (Array.isArray(item.tags) ? item.tags.length > 0 : String(item.tags).trim() !== '') ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(Array.isArray(item.tags) ? item.tags : String(item.tags).replace(/[{}]/g, '').split(',')).map((tag: string, idx: number) => (
+                        <span key={idx} className={`text-[10px] px-2 py-0.5 rounded font-medium ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-[#fff1e5] text-[#534434]'}`}>
+                          #{tag.trim().replace(/"/g, '')}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {/* Detail & Promote Buttons */}
+                  <div className="flex items-center gap-2 pt-2">
+                    <button 
+                      onClick={() => setSelectedIdeaDetail(item)}
+                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${isDarkMode ? 'border-slate-700 hover:bg-slate-800 text-slate-200' : 'border-[#d8c3ad] hover:bg-[#fff1e5] text-[#534434]'}`}
+                    >
+                      <i className="fa-solid fa-circle-info text-amber-500"></i> Detail &amp; Guide
+                    </button>
+
+                    {item.status === 'Approved' && (
+                      <button 
+                        onClick={() => handlePromoteIdea(item)}
+                        className="py-2 px-3 rounded-xl text-xs font-bold bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        title="Promote to Project Workspace"
+                      >
+                        <i className="fa-solid fa-rocket"></i> Promote
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Author Name */}
+                  <div className={`flex items-center justify-between pt-3 border-t text-xs ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-600 font-bold grid place-items-center text-[10px]">
+                        {(item.author_name || 'I').charAt(0).toUpperCase()}
+                      </span>
+                      <span className={`font-medium truncate max-w-40 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{item.author_name || 'InnovaSeed'}</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            );
+          })}
+
         </div>
       )}
 
-      {/* Modal / Form Input (Create & Edit) */}
+      {/* ================= 1. DETAIL & GUIDE MODAL (4-Part Structured) ================= */}
+      {selectedIdeaDetail && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className={`rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-5 border max-h-[90vh] overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+            
+            {/* Header */}
+            <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                  {selectedIdeaDetail.status}
+                </span>
+                <h3 className="font-bold text-lg mt-1">{selectedIdeaDetail.title}</h3>
+              </div>
+              <button onClick={() => setSelectedIdeaDetail(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                <i className="fa-solid fa-xmark text-xl"></i>
+              </button>
+            </div>
+
+            {/* Optional Sketch Preview */}
+            {selectedIdeaDetail.sketch_image_url && (
+              <div className="relative h-48 rounded-xl overflow-hidden border border-slate-700/50">
+                <Image
+                  src={selectedIdeaDetail.sketch_image_url}
+                  alt="Project Sketch"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover"
+                  unoptimized
+                />
+              </div>
+            )}
+
+            {/* 4-Part Structured Content */}
+            <div className="space-y-3.5 text-xs">
+              
+              {/* 1. The Problem */}
+              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                  <i className="fa-solid fa-circle-exclamation"></i> 1. The Problem (What issue are we solving?)
+                </h4>
+                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                  {selectedIdeaDetail.problem_statement || selectedIdeaDetail.description || "Everyday challenge or inefficiency encountered by students that requires an innovative prototype solution."}
+                </p>
+              </div>
+
+              {/* 2. How It Works */}
+              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                  <i className="fa-solid fa-gears"></i> 2. How It Works (The Solution)
+                </h4>
+                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                  {selectedIdeaDetail.how_it_works || "A concise explanation of how the mechanism or software logic operates to solve the defined problem simply."}
+                </p>
+              </div>
+
+              {/* 3. Materials Needed */}
+              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                  <i className="fa-solid fa-toolbox"></i> 3. Materials Needed (Mini Toolkit)
+                </h4>
+                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                  {selectedIdeaDetail.materials_needed || "List of accessible tools or components (e.g., used cardboard, tape, sensors, micro:bit, or Scratch/Figma account)."}
+                </p>
+              </div>
+
+              {/* 4. Step-by-Step Build Guide */}
+              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                <h4 className="font-bold text-amber-500 mb-1.5 flex items-center gap-2">
+                  <i className="fa-solid fa-list-check"></i> 4. Step-by-Step Build Guide
+                </h4>
+                <p className={`whitespace-pre-line ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>
+                  {selectedIdeaDetail.step_by_step_guide || "1. Draft initial sketches or wireframe layouts.\n2. Gather required physical or digital toolkits.\n3. Build the core functional prototype.\n4. Test performance and refine for presentation."}
+                </p>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className={`flex items-center justify-between pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
+              <button 
+                type="button" 
+                onClick={() => setSelectedIdeaDetail(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition text-slate-500 hover:bg-slate-100"
+              >
+                Close
+              </button>
+
+              {selectedIdeaDetail.status === 'Approved' && (
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    const targetItem = selectedIdeaDetail;
+                    setSelectedIdeaDetail(null);
+                    handlePromoteIdea(targetItem);
+                  }}
+                  className="px-5 py-2 text-xs font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer flex items-center gap-1.5"
+                >
+                  <i className="fa-solid fa-rocket"></i> Promote to Project Workspace
+                </button>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ================= 2. CAPTURE & EDIT IDEA MODAL ================= */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className={`rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+          <div className={`rounded-2xl max-w-xl w-full p-6 shadow-xl space-y-4 border max-h-[90vh] overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+            
             <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-              <h3 className="font-bold text-lg">
+              <h3 className="font-bold text-lg text-amber-500">
                 {editingId ? 'Edit Innovation Idea ✏️' : 'Capture New Innovation Idea 💡'}
               </h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
@@ -406,91 +615,147 @@ function handleDeleteIdea(id: number) {
               </button>
             </div>
 
-            <form onSubmit={handleSaveIdea} className="space-y-4">
+            <form onSubmit={handleSaveIdea} className="space-y-3 text-xs">
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Idea Title</label>
+                <label className="block font-bold mb-1">Idea Title *</label>
                 <input 
                   type="text" 
-                  value={title} 
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Smart IoT Composting Bin" 
                   required
-                  className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
+                  placeholder="e.g., Solar-Powered Pencil Sharpener"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
                 />
               </div>
 
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Description &amp; Concept</label>
+                <label className="block font-bold mb-1">Short Summary (2–3 sentences) *</label>
                 <textarea 
-                  value={description} 
+                  required
+                  rows={2}
+                  placeholder="Explain what your invention does and how it helps people..."
+                  value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe the problem, hypothesis and impact..." 
-                  rows={3}
-                  className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
-                ></textarea>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Status</label>
-                  <select 
-                    value={status} 
-                    onChange={(e) => setStatus(e.target.value)}
-                    className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
-                  >
-                    <option value="Raw Concept">Raw Concept</option>
-                    <option value="Under Validation">Under Validation</option>
-                    <option value="Approved">Approved</option>
-                    <option value="Prototype">Prototype</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Self-Assessment Feasibility (0 - 10)</label>
-                  <input 
-                    type="number" 
-                    step="0.1"
-                    min="0"
-                    max="10"
-                    value={feasibilityScore} 
-                    onChange={(e) => setFeasibilityScore(e.target.value)}
-                    placeholder="8.5" 
-                    className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
-                  />
-                </div>
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
+                />
               </div>
 
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>Tags (comma separated)</label>
+                <label className="block font-bold mb-1">Category Tags (comma separated, max 3)</label>
                 <input 
                   type="text" 
-                  value={tags} 
+                  placeholder="IoT, Clean Tech, Education"
+                  value={tags}
                   onChange={(e) => setTags(e.target.value)}
-                  placeholder="circular-economy, materials, iot" 
-                  className={`w-full rounded-xl px-3 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div>
+                <label className="block font-bold mb-1">Sketch / Image Link (Optional)</label>
+                <input 
+                  type="url" 
+                  placeholder="https://example.com/my-sketch.png"
+                  value={sketchImageUrl}
+                  onChange={(e) => setSketchImageUrl(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">1. The Problem Statement (Optional Guide)</label>
+                <textarea 
+                  rows={2}
+                  placeholder="What issue are we solving?"
+                  value={problemStatement}
+                  onChange={(e) => setProblemStatement(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">2. How It Works (Optional Guide)</label>
+                <textarea 
+                  rows={2}
+                  placeholder="Explain the solution mechanism..."
+                  value={howItWorks}
+                  onChange={(e) => setHowItWorks(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">3. Materials Needed (Optional Guide)</label>
+                <input 
+                  type="text"
+                  placeholder="e.g., Cardboard, sensors, micro:bit"
+                  value={materialsNeeded}
+                  onChange={(e) => setMaterialsNeeded(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">4. Step-by-Step Build Guide (Optional Guide)</label>
+                <textarea 
+                  rows={3}
+                  placeholder="1. Draft initial sketches... 2. Build core..."
+                  value={stepByStepGuide}
+                  onChange={(e) => setStepByStepGuide(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">Status</label>
+                <select 
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}
+                >
+                  {currentUserRole === 'student' ? (
+                    <>
+                      <option value="Raw Concept">Raw Concept</option>
+                      <option value="Under Validation">Under Validation</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="Raw Concept">Raw Concept</option>
+                      <option value="Under Validation">Under Validation</option>
+                      <option value="Approved">Approved</option>
+                      <option value="Prototype">Prototype</option>
+                    </>
+                  )}
+                </select>
+                {currentUserRole === 'student' && (
+                  <p className="text-[10px] text-amber-500 mt-1">
+                    *Students can set status to Raw Concept or submit for Under Validation. Mentor approval is required for Approved / Prototype states.
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
                 <button 
                   type="button" 
                   onClick={() => setShowModal(false)}
-                  className={`px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+                  className="px-4 py-2 font-semibold text-slate-500 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
-                  className="px-5 py-2 text-xs font-semibold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer"
+                  className="px-5 py-2 font-bold bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-400 cursor-pointer shadow-sm"
                 >
                   {editingId ? 'Save Changes' : 'Save Idea'}
                 </button>
               </div>
             </form>
+
           </div>
         </div>
       )}
 
-      {/* Custom Delete Confirmation Modal (Ganti confirm() browser) */}
+      {/* Custom Delete Confirmation Modal */}
       {deleteConfirmId !== null && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
