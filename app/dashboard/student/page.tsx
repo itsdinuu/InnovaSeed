@@ -6,9 +6,13 @@ import Link from 'next/link'
 import { useTheme } from '@/context/ThemeContext'
 
 type ProjectData = {
-  id?: string
+  id?: string | number
   title: string
-  description: string
+  subtitle?: string
+  description?: string
+  status?: string
+  category?: string
+  project_code?: string
 }
 
 type TelemetryLog = {
@@ -16,27 +20,31 @@ type TelemetryLog = {
   title: string
   status: string
   date: string
+  user_id?: string
 }
 
 export default function StudentDashboardPage() {
   const { isDarkMode } = useTheme()
-  const [userName, setUserName] = useState('Student Innovator')
-  const [researchField, setResearchField] = useState('SOFTWARE ENGINEERING TRACK')
-  const [mentorEmail, setMentorEmail] = useState('Faculty Mentor')
-  const [institution, setInstitution] = useState('Plego Indonesia')
-  const [teamSize, setTeamSize] = useState('Team Member')
+  const [userName, setUserName] = useState('Student')
+  const [teamName, setTeamName] = useState('Solo Project')
   const [projectData, setProjectData] = useState<ProjectData | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   
   // State data real & interaksi
   const [telemetryLogs, setTelemetryLogs] = useState<TelemetryLog[]>([])
   const [newLogTitle, setNewLogTitle] = useState('')
+  const [sampleId, setSampleId] = useState('SAMPLE-01')
+  const [experimentalMetric, setExperimentalMetric] = useState('')
+  const [experimentalNote, setExperimentalNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [showDossierModal, setShowDossierModal] = useState(false)
 
-  // Helper Toast Notification
+  // Statistik Real-Time
+  const [taskStats, setTaskStats] = useState({ total: 0, completed: 0 })
+  const [mentorRating, setMentorRating] = useState<{ score: number | string; count: number }>({ score: 'No Review', count: 0 })
+  const [readinessIndex, setReadinessIndex] = useState<{ percentage: number; statusText: string }>({ percentage: 0, statusText: 'Pending' })
+
   const triggerToast = (message: string) => {
     setToastMessage(message)
     setTimeout(() => {
@@ -52,79 +60,138 @@ export default function StudentDashboardPage() {
         setLoading(true)
 
         // 1. Ambil sesi user aktif dari Supabase Auth
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        const { data: { session }, error: authError } = await supabase.auth.getSession()
         
-        if (authError || !user) {
-          // Jika tidak ada user login di Supabase, cek mock local storage untuk testing
-          const mockStorage = localStorage.getItem('innovaseed_mock_session')
-          if (mockStorage) {
-            try {
-              const mockSession = JSON.parse(mockStorage)
-              if (!cancelled) {
-                setUserName(mockSession.name || 'Desti Andhini')
-                setResearchField('SOFTWARE ENGINEERING TRACK')
-                setInstitution('Plego Indonesia')
-                setTeamSize('3 members')
-                setTelemetryLogs([
-                  { id: 'mock-1', title: 'Prototype architecture setup', status: 'Verified', date: '2026-11-12' }
-                ])
-                setProjectData({ title: 'Young Innovator LMS (InnovaSeed v2)', description: 'Full-stack platform built with Next.js & Supabase.' })
-              }
-            } catch {
-              // ignore
-            }
-          }
-          setLoading(false)
+        if (authError || !session?.user) {
+          if (!cancelled) setLoading(false)
           return
         }
 
-        if (!cancelled) {
-          setCurrentUserId(user.id)
-        }
+        const user = session.user
+        if (!cancelled) setCurrentUserId(user.id)
 
-        // 2. Ambil data profil siswa dari tabel public.profiles berdasarkan user.id
+        const metadataName = user.user_metadata?.full_name || user.user_metadata?.name
+
+        // 2. Ambil data profil siswa
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
           .maybeSingle()
 
-        if (!cancelled && profile) {
-          if (profile.full_name || profile.name) {
+        if (!cancelled) {
+          if (profile?.full_name || profile?.name) {
             setUserName(profile.full_name || profile.name)
+          } else if (metadataName) {
+            setUserName(metadataName)
           } else if (user.email) {
             setUserName(user.email.split('@')[0])
           }
-
-          if (profile.institution) setInstitution(profile.institution)
-          if (profile.role) setResearchField(profile.role.toUpperCase() + ' TRACK')
-          if (profile.team_size) setTeamSize(profile.team_size)
-          if (profile.mentor_email) setMentorEmail(profile.mentor_email)
-        } else if (!cancelled && user.email) {
-          setUserName(user.email.split('@')[0])
         }
 
-        // 3. Ambil data research logs / telemetry khusus user ini
+        // 3. Ambil data Tim dari tabel `team_members` dan `teams`
+        const { data: memberData } = await supabase
+          .from('team_members')
+          .select('team_id, teams(name)')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        const currentTeamId = memberData?.team_id || null
+        if (!cancelled && memberData?.teams) {
+          setTeamName((memberData.teams as { name?: string }).name || 'Assigned Team')
+        }
+
+        // 4. Ambil data research logs / telemetry KHUSUS user ini
         const { data: logsData } = await supabase
           .from('research_logs')
           .select('*')
           .eq('user_id', user.id)
           .order('id', { ascending: false })
 
-        if (!cancelled && logsData && logsData.length > 0) {
+        if (!cancelled && logsData) {
           setTelemetryLogs(logsData)
         }
 
-        // 4. Ambil data proyek inovasi dari tabel projects
-        const { data: projectRes } = await supabase
-          .from('projects')
-          .select('*')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle()
+        // 5. DISESUAIKAN: Ambil data proyek aktif terbaru dari tabel `projects` (yang dipromosikan dari Idea Bank)
+        let projQuery = supabase.from('projects').select('*')
+        if (currentTeamId) {
+          projQuery = projQuery.or(`team_id.eq.${currentTeamId},id.eq.${user.id}`)
+        }
 
-        if (!cancelled && projectRes) {
-          setProjectData(projectRes)
+        const { data: latestProjects } = await projQuery.order('created_at', { ascending: false }).limit(1)
+
+        if (!cancelled && latestProjects && latestProjects.length > 0) {
+          const proj = latestProjects[0]
+          setProjectData({
+            id: proj.id,
+            title: proj.title,
+            subtitle: proj.subtitle,
+            description: proj.subtitle || proj.project_code || "Active innovation prototype build phase in progress.",
+            status: proj.approval_status ? proj.approval_status.toUpperCase() : 'PROTOTYPE ACTIVE',
+            category: 'Applied Sciences & Software Engineering'
+          })
+        } else if (!cancelled) {
+          // Fallback jika tabel projects kosong, cek dari tabel ideas milik user
+          const { data: userIdeas } = await supabase
+            .from('ideas')
+            .select('*')
+            .eq('author_id', user.id)
+            .order('id', { ascending: false })
+            .limit(1)
+
+          if (userIdeas && userIdeas.length > 0) {
+            setProjectData({
+              id: userIdeas[0].id,
+              title: userIdeas[0].title,
+              description: userIdeas[0].problem_statement || userIdeas[0].description || "Active innovation prototype build phase in progress.",
+              status: userIdeas[0].status ? userIdeas[0].status.toUpperCase() : 'PROTOTYPE ACTIVE',
+              category: 'Innovation Concept'
+            })
+          } else {
+            setProjectData(null)
+          }
+        }
+
+        // 6. Ambil statistik task Kanban dari tabel `project_tasks` KHUSUS user ini secara real-time
+        const { data: tasksData } = await supabase
+          .from('project_tasks')
+          .select('status')
+          .eq('user_id', user.id)
+
+        let calculatedCompleted = 0
+        let calculatedTotal = 0
+
+        if (!cancelled && tasksData && tasksData.length > 0) {
+          calculatedTotal = tasksData.length
+          calculatedCompleted = tasksData.filter(t => t.status === 'Completed' || t.status === 'completed').length
+          setTaskStats({ total: calculatedTotal, completed: calculatedCompleted })
+        } else if (!cancelled) {
+          setTaskStats({ total: 0, completed: 0 })
+        }
+
+        // 7. Ambil data Mentor Feedback secara real-time untuk menghitung Rating
+        const { data: feedbackData } = await supabase
+          .from('mentor_feedback')
+          .select('rating')
+
+        if (!cancelled && feedbackData && feedbackData.length > 0) {
+          const totalScore = feedbackData.reduce((acc, curr) => acc + (curr.rating || 0), 0)
+          const avgScore = Number((totalScore / feedbackData.length).toFixed(1))
+          setMentorRating({ score: avgScore, count: feedbackData.length })
+        } else if (!cancelled) {
+          setMentorRating({ score: 'No Review', count: 0 })
+        }
+
+        // 8. Hitung Readiness Index secara dinamis berdasarkan progres task + bonus log riset
+        const taskPercent = calculatedTotal > 0 ? Math.round((calculatedCompleted / calculatedTotal) * 100) : 0
+        const logBonus = Math.min(logsData ? logsData.length * 5 : 0, 20)
+        const finalReadiness = Math.min(taskPercent + logBonus, 100)
+
+        if (!cancelled) {
+          setReadinessIndex({
+            percentage: finalReadiness,
+            statusText: finalReadiness >= 80 ? 'Ready' : finalReadiness > 0 ? 'In Progress' : 'Pending'
+          })
         }
 
       } catch (err) {
@@ -141,12 +208,13 @@ export default function StudentDashboardPage() {
     }
   }, [])
 
-  // Fungsi Tambah Log Telemetri ke Supabase
   const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newLogTitle.trim() || !currentUserId) return
-
+    if (!currentUserId) return
+    
+    const logTitleText = newLogTitle.trim() || `Sample ${sampleId} - Metric: ${experimentalMetric || 'Experimental trial'}`
     setSubmitting(true)
+
     try {
       const currentDate = new Date().toISOString().split('T')[0]
 
@@ -154,7 +222,7 @@ export default function StudentDashboardPage() {
         .from('research_logs')
         .insert([{
           user_id: currentUserId,
-          title: newLogTitle.trim(),
+          title: logTitleText,
           status: 'Pending Review',
           date: currentDate
         }])
@@ -167,23 +235,18 @@ export default function StudentDashboardPage() {
       }
 
       setNewLogTitle('')
-      triggerToast('Telemetry log successfully recorded to cloud!')
+      setExperimentalMetric('')
+      setExperimentalNote('')
+      triggerToast('Lab ledger entry successfully committed to cloud!')
     } catch (err: unknown) {
       console.error(err)
-      // Fallback lokal jika tabel offline
-      const fallbackEntry = {
-        id: Date.now(),
-        title: newLogTitle.trim(),
-        status: 'Pending Review',
-        date: new Date().toISOString().split('T')[0]
-      }
-      setTelemetryLogs(prev => [fallbackEntry, ...prev])
-      setNewLogTitle('')
-      triggerToast('Log added locally (Database offline fallback).')
+      triggerToast('Failed to commit entry to cloud ledger.')
     } finally {
       setSubmitting(false)
     }
   }
+
+  const progressPercentage = taskStats.total > 0 ? Math.round((taskStats.completed / taskStats.total) * 100) : 0
 
   if (loading) {
     return (
@@ -198,198 +261,338 @@ export default function StudentDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Top Banner / Welcome Header */}
-      <div className={`flex flex-wrap items-center justify-between gap-4 p-6 rounded-2xl border shadow-xs transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
+      
+      {/* Welcome Header */}
+      <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl border shadow-xs transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
         <div>
-          <span className="inline-block rounded-md px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 border border-amber-500/30 text-amber-600 mb-2">
-            <i className="fa-solid fa-circle-check mr-1.5"></i> Active Cohort Session · 2026 Qualifier
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Welcome back, {userName} 👋
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Welcome back, {userName} 👋</h1>
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-xs font-bold border border-amber-500/30">Accelerated Track</span>
+          </div>
           <p className={`text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-            Your research workspace is synchronized under <span className="font-semibold">{researchField}</span> track.
+            Sprint Validation &amp; Pre-Competition Benchmarking • <span className="text-amber-500 font-bold">Active workspace session</span>
           </p>
         </div>
 
-        <div className={`border px-4 py-3 rounded-xl text-xs space-y-0.5 transition-colors ${isDarkMode ? 'bg-slate-800/60 border-slate-700/60' : 'bg-[#fff1e5] border-[#d8c3ad]/60'}`}>
-          <div className="text-slate-400 text-[10px] uppercase font-semibold">Assigned Mentor</div>
-          <div className="font-bold">{mentorEmail}</div>
-          <div className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1 mt-0.5">
-            <i className="fa-solid fa-shield-halved"></i> Faculty Verified
+        {/* Dynamic Competition Track Status Badge */}
+        <div className={`flex items-center gap-2 self-start md:self-auto px-3 py-2 rounded-xl border shadow-xs ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-[#d8c3ad]'}`}>
+          <i className="fa-solid fa-flag-checkered text-amber-500 text-lg"></i>
+          <div className="flex flex-col text-left text-xs">
+            <span className="text-slate-400">Competition Track</span>
+            <span className="font-bold text-amber-500">National Science Fair (Active)</span>
           </div>
         </div>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        
-        {/* Kiri: Real Telemetry & Lab Notebooks */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className={`rounded-2xl border p-6 shadow-xs transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-base font-bold">Research Telemetry &amp; Lab Notebooks</h2>
-                <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Record your daily trial results and experimental parameters.</p>
-              </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 border border-amber-500/30">
-                {telemetryLogs.length} Logs Recorded
-              </span>
-            </div>
-
-            <form onSubmit={handleAddLog} className="flex gap-2 mb-6">
-              <input
-                type="text"
-                required
-                value={newLogTitle}
-                onChange={(e) => setNewLogTitle(e.target.value)}
-                placeholder="Enter trial description or telemetry milestone..."
-                className={`flex-1 rounded-xl px-4 py-2.5 text-xs outline-none transition border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-amber-500' : 'bg-[#fbebdd] border-[#d8c3ad] text-[#221a12] focus:border-amber-500'}`}
-              />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-4 py-2.5 rounded-xl bg-[#F59E0B] text-[#0F172A] font-semibold text-xs hover:bg-[#D97706] transition disabled:opacity-50 cursor-pointer shadow-sm"
-              >
-                {submitting ? 'Saving...' : '+ Add Log'}
-              </button>
-            </form>
-
-            <div className="space-y-3">
-              {telemetryLogs.length === 0 ? (
-                <p className={`text-xs text-center py-4 ${isDarkMode ? 'text-slate-500' : 'text-[#534434]'}`}>No telemetry logs recorded yet. Add your first milestone above!</p>
-              ) : (
-                telemetryLogs.map((log, idx) => (
-                  <div key={log.id || idx} className={`p-4 rounded-xl border transition-colors flex items-center justify-between gap-4 ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-[#fff1e5]/40 border-[#d8c3ad]/50'}`}>
-                    <div>
-                      <b className="text-xs font-semibold block">{log.title}</b>
-                      <span className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}><i className="fa-regular fa-clock mr-1"></i> {log.date}</span>
-                    </div>
-                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${log.status === 'Verified' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-600 border border-amber-500/30'}`}>
-                      {log.status}
-                    </span>
-                  </div>
-                ))
-              )}
+      {/* Top Metrics Ribbon - Pure Real-Time */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`p-5 rounded-xl border shadow-xs flex flex-col justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+          <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase">
+            <span>Active Prototype</span>
+            <i className="fa-solid fa-flask text-amber-500"></i>
+          </div>
+          <div className="mt-2">
+            <h3 className="text-base font-bold truncate">{projectData ? projectData.title : 'No Project Selected'}</h3>
+            <div className="mt-2 flex items-center gap-1.5 text-xs">
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+              <span className="text-amber-500 font-medium truncate">{projectData ? (projectData.category || 'Prototype Active') : 'Go to Idea Bank'}</span>
             </div>
           </div>
+        </div>
 
-          {/* Project Status Section */}
-          {!projectData ? (
-            <div className={`border rounded-2xl p-8 text-center shadow-xs transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
-              <div className="w-12 h-12 bg-amber-500/10 text-amber-600 rounded-xl grid place-items-center mx-auto mb-3 text-lg">
-                <i className="fa-solid fa-lightbulb"></i>
+        <div className={`p-5 rounded-xl border shadow-xs flex flex-col justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+          <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase">
+            <span>Milestone Completion</span>
+            <i className="fa-solid fa-chart-pie text-amber-500"></i>
+          </div>
+          <div className="mt-2">
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-lg font-bold">{progressPercentage}%</h3>
+              <span className="text-xs text-slate-400">({taskStats.completed}/{taskStats.total} Complete)</span>
+            </div>
+            <div className={`w-full rounded-full h-2 mt-2 overflow-hidden ${isDarkMode ? 'bg-slate-800' : 'bg-[#fff1e5]'}`}>
+              <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${progressPercentage}%` }}></div>
+            </div>
+          </div>
+        </div>
+
+        <div className={`p-5 rounded-xl border shadow-xs flex flex-col justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+          <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase">
+            <span>Mentor Rating</span>
+            <i className="fa-solid fa-star text-amber-500"></i>
+          </div>
+          <div className="mt-2">
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-lg font-bold">{mentorRating.score}</h3>
+              {typeof mentorRating.score === 'number' && <span className="text-xs text-slate-400">/ 5.0</span>}
+            </div>
+            <span className="text-xs text-slate-400 block mt-1">{mentorRating.count > 0 ? `${mentorRating.count} Recent endorsements` : 'Awaiting mentor review'}</span>
+          </div>
+        </div>
+
+        <div className={`p-5 rounded-xl border shadow-xs flex flex-col justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+          <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase">
+            <span>Readiness Index</span>
+            <i className="fa-solid fa-gauge-high text-amber-500"></i>
+          </div>
+          <div className="mt-2">
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-lg font-bold">{readinessIndex.percentage}%</h3>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/30 text-[10px] font-bold">{readinessIndex.statusText}</span>
+            </div>
+            <span className="text-xs text-amber-500 block mt-1 font-semibold">Based on task milestone progress</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Active Project Card & Competition Countdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Active Project Card */}
+        <div className={`lg:col-span-8 rounded-2xl border p-6 shadow-xs flex flex-col justify-between transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-inherit">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-xs font-bold border border-amber-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                    {projectData ? (projectData.status || 'PROTOTYPE ACTIVE') : 'No Active Project'}
+                  </span>
+                  <span className="text-xs text-slate-400">Managed by {teamName}</span>
+                </div>
+                <h2 className="text-xl font-bold mt-2">
+                  {projectData ? projectData.title : 'No Project Active Yet'}
+                </h2>
+                <p className={`text-xs mt-1 leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+                  {projectData 
+                    ? (projectData.description || projectData.subtitle)
+                    : 'You have not promoted any project from the Idea Bank yet. Go to Idea Bank to pick an innovation idea.'}
+                </p>
               </div>
-              <h2 className="text-base font-bold">No Innovation Projects Registered</h2>
-              <p className={`text-xs mt-1 max-w-sm mx-auto ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-                You haven&apos;t submitted any innovation data to the database yet. Start capturing ideas or register your first prototype now!
-              </p>
-              <div className="mt-5 flex justify-center">
-                <Link 
-                  href="/dashboard/idea-bank" 
-                  className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] shadow-sm cursor-pointer"
-                >
-                  <i className="fa-solid fa-plus"></i> Capture New Idea
+              <span className="text-xs px-2.5 py-1 rounded-md bg-amber-500/5 text-amber-600 border border-amber-500/20 font-semibold shrink-0">
+                {telemetryLogs.length} Samples Logged
+              </span>
+            </div>
+
+            {/* Jika belum ada proyek yang dipromosikan */}
+            {!projectData ? (
+              <div className="py-10 text-center space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/10 text-amber-500 grid place-items-center text-lg border border-amber-500/30">
+                  <i className="fa-solid fa-lightbulb"></i>
+                </div>
+                <h3 className="font-bold text-sm">No Promoted Project Found</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">Promote an idea from your Idea Bank to activate your workspace and track milestones.</p>
+                <div className="pt-2">
+                  <Link href="/dashboard/idea-bank" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-600 transition shadow-sm inline-flex items-center gap-2">
+                    <span>Go to Idea Bank</span>
+                    <i className="fa-solid fa-arrow-right"></i>
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Milestone Roadmap Progress */}
+                <div className="py-4">
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="font-semibold">Milestone Roadmap Progress</span>
+                    <span className="text-amber-500 font-bold">{progressPercentage}% Completed</span>
+                  </div>
+                  <div className={`w-full rounded-full h-3 overflow-hidden ${isDarkMode ? 'bg-slate-800' : 'bg-[#fff1e5]'}`}>
+                    <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${progressPercentage}%` }}></div>
+                  </div>
+                </div>
+
+                {/* Lab Metrics Snapshot */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 py-2">
+                  <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff1e5]/50 border-[#d8c3ad]'}`}>
+                    <span className="text-xs text-slate-400">Category / Track</span>
+                    <p className="text-sm font-bold mt-0.5 truncate">{projectData.category || 'Applied Sciences'}</p>
+                    <span className="text-[11px] text-emerald-600 font-semibold">Verified Spec</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff1e5]/50 border-[#d8c3ad]'}`}>
+                    <span className="text-xs text-slate-400">Kanban Tasks</span>
+                    <p className="text-sm font-bold mt-0.5">{taskStats.completed} of {taskStats.total} Done</p>
+                    <span className="text-[11px] text-slate-400">Cloud Synced</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff1e5]/50 border-[#d8c3ad]'}`}>
+                    <span className="text-xs text-slate-400">Project ID</span>
+                    <p className="text-sm font-bold mt-0.5">#{projectData.id}</p>
+                    <span className="text-[11px] text-amber-500 font-bold">Supabase Active</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {projectData && (
+            <div className="flex items-center justify-between pt-4 border-t border-inherit mt-4">
+              <div className="flex items-center gap-2">
+                <Link href="/dashboard/workspace" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-600 transition shadow-sm inline-flex items-center gap-2">
+                  <span>Open Workspace</span>
+                  <i className="fa-solid fa-arrow-right"></i>
+                </Link>
+                <Link href="/dashboard/idea-bank" className={`px-4 py-2 border rounded-xl text-xs font-medium transition ${isDarkMode ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200' : 'border-[#d8c3ad] bg-[#fff8f4] hover:bg-[#fbebdd]'}`}>
+                  Explore Idea Bank
                 </Link>
               </div>
-            </div>
-          ) : (
-            <div className={`border rounded-2xl p-6 shadow-xs transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
-              <span className="text-xs bg-amber-500/10 border border-amber-500/30 text-amber-600 px-2.5 py-0.5 rounded-md font-semibold">
-                In Progress
-              </span>
-              <h2 className="text-lg font-bold mt-2">{projectData.title}</h2>
-              <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{projectData.description}</p>
+              <span className="text-xs text-slate-400 hidden sm:inline-block">InnovaSeed v2 Workspace</span>
             </div>
           )}
         </div>
 
-        {/* Kanan: Competition Dossier */}
-        <div className="space-y-6">
-          <div className={`rounded-2xl border p-6 shadow-xs space-y-4 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
-            <h3 className="text-sm font-bold border-b pb-3 transition-colors">Competition Dossier</h3>
-            
-            <div className="space-y-3 text-xs">
-              <div className={`flex justify-between items-center py-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-                <span className={isDarkMode ? 'text-slate-400' : 'text-[#534434]'}>Team Scale</span>
-                <span className="font-semibold">{teamSize}</span>
+        {/* Competition Countdown Widget */}
+        <div className="lg:col-span-4 bg-slate-950 text-slate-100 rounded-2xl p-6 shadow-md border border-slate-800 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <i className="fa-solid fa-trophy text-amber-400 text-lg"></i>
+                <span className="text-xs text-amber-400 font-bold uppercase tracking-wider">TARGET COMPETITION</span>
               </div>
-              <div className={`flex justify-between items-center py-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-                <span className={isDarkMode ? 'text-slate-400' : 'text-[#534434]'}>Institution</span>
-                <span className="font-semibold">{institution}</span>
-              </div>
-              <div className={`flex justify-between items-center py-2 border-b ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-                <span className={isDarkMode ? 'text-slate-400' : 'text-[#534434]'}>Ethics Clearance</span>
-                <span className="font-semibold text-emerald-600">ISO/IEC Compliant</span>
+              <span className="px-2 py-0.5 rounded-full bg-white/10 text-white text-[10px]">National</span>
+            </div>
+
+            <div className="mt-3">
+              <h3 className="text-base font-bold text-white">National Science Fair 2026</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Environmental Engineering &amp; Applied Sciences</p>
+            </div>
+
+            <div className="mt-4 p-3 bg-black/40 rounded-xl border border-slate-800 text-center">
+              <span className="text-[10px] text-slate-400 uppercase font-semibold block mb-2">Submission Window Closes In</span>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-white/5 p-2 rounded border border-white/10">
+                  <span className="text-lg font-bold text-amber-400 block">14</span>
+                  <span className="text-[9px] text-slate-400 uppercase">Days</span>
+                </div>
+                <div className="bg-white/5 p-2 rounded border border-white/10">
+                  <span className="text-lg font-bold text-amber-400 block">08</span>
+                  <span className="text-[9px] text-slate-400 uppercase">Hours</span>
+                </div>
+                <div className="bg-white/5 p-2 rounded border border-white/10">
+                  <span className="text-lg font-bold text-amber-400 block">32</span>
+                  <span className="text-[9px] text-slate-400 uppercase">Mins</span>
+                </div>
               </div>
             </div>
 
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => setShowDossierModal(true)}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 text-white font-semibold text-xs hover:bg-slate-800 transition cursor-pointer shadow-sm flex items-center justify-center gap-2"
-              >
-                <i className="fa-solid fa-file-arrow-down text-amber-400"></i> Export Research Dossier
-              </button>
+            <div className="mt-4 space-y-1.5 text-xs">
+              <div className="flex justify-between font-semibold text-slate-300 mb-1">
+                <span>Requirements</span>
+                <span className="text-amber-400">{taskStats.completed} / {taskStats.total || 6} Complete</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-300"><i className="fa-solid fa-circle-check text-amber-400 text-xs"></i> Abstract &amp; Executive Summary</div>
+              <div className="flex items-center gap-2 text-slate-300"><i className="fa-solid fa-circle-check text-amber-400 text-xs"></i> Signed Digital Lab Notebook</div>
+              <div className="flex items-center gap-2 text-slate-300"><i className="fa-solid fa-circle-check text-amber-400 text-xs"></i> Institutional Safety Clearance</div>
+              <div className="flex items-center gap-2 text-slate-300"><i className="fa-solid fa-circle-check text-amber-400 text-xs"></i> 3-Minute Prototype Video</div>
             </div>
           </div>
 
-          <div className={`border rounded-2xl p-6 text-xs space-y-3 transition-colors ${isDarkMode ? 'bg-amber-500/15 border-amber-500/30 text-slate-300' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#221a12]'}`}>
-            <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
-              <i className="fa-solid fa-triangle-exclamation"></i> Submission Deadline
-            </div>
-            <p className={`leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-              Preliminary prototype telemetry and lab notebooks for the PLEGO 2026 National Qualifier must be finalized before June 15, 2026.
-            </p>
+          <div className="pt-4 border-t border-slate-800 mt-4">
+            <Link href="/dashboard/competition-prep" className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition shadow-sm">
+              <span>Competition Guidelines &amp; Rubric</span>
+              <i className="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+            </Link>
           </div>
         </div>
 
       </div>
 
-      {/* Modal Pratinjau & Unduh Research Dossier */}
-      {showDossierModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-base">Competition Research Dossier 📄</h3>
-              <button onClick={() => setShowDossierModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <i className="fa-solid fa-xmark text-lg"></i>
-              </button>
+      {/* Mentor Feedback & Quick Lab Logger */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Mentor Feedback */}
+        <div className={`lg:col-span-6 rounded-2xl border p-6 shadow-xs flex flex-col justify-between transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-inherit">
+              <div className="flex items-center gap-2">
+                <i className="fa-solid fa-comments text-amber-500"></i>
+                <h3 className="text-sm font-bold">Mentor Feedback &amp; Updates</h3>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-[10px] font-bold border border-amber-500/30">Unread</span>
             </div>
 
-            <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-              Official project documentation package compiled for the PLEGO National Science Fair 2026 qualifier. Contains team metrics, verified telemetry logs, and ISO/IEC compliance audit.
-            </p>
-
-            <div className={`p-3 rounded-xl border text-xs space-y-1 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#534434]'}`}>
-              <p className="font-bold"><i className="fa-solid fa-circle-info mr-1 text-amber-500"></i> Package Details:</p>
-              <p>Lead Researcher: {userName}</p>
-              <p>Institution: {institution}</p>
-              <p>Track: {researchField}</p>
-              <p>Total Telemetry Logs: {telemetryLogs.length} entries</p>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button 
-                onClick={() => setShowDossierModal(false)}
-                className={`px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => {
-                  setShowDossierModal(false)
-                  triggerToast("Research Dossier PDF successfully compiled and downloaded!")
-                }}
-                className="px-5 py-2 text-xs font-semibold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] shadow-sm cursor-pointer transition"
-              >
-                Download PDF Package
-              </button>
+            <div className="flex items-start gap-3 mt-4">
+              <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-600 font-bold grid place-items-center shrink-0 border border-amber-500/30">
+                DR
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-xs">
+                  <div>
+                    <h4 className="font-bold">Dr. Raden Hartono</h4>
+                    <span className="text-slate-400 text-[11px]">Senior Advisor, Applied Sciences Lab</span>
+                  </div>
+                  <span className="text-slate-400 text-[11px]">Recent</span>
+                </div>
+                <div className={`mt-2 p-3 rounded-xl border-l-4 border-amber-500 text-xs ${isDarkMode ? 'bg-slate-800/60' : 'bg-[#fff1e5]'}`}>
+                  <p className="italic">
+                    &quot;Ensure your project tasks and milestones in the workspace are updated regularly for the upcoming evaluation review.&quot;
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
+
+          <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-inherit mt-4">
+            <Link href="/dashboard/mentor-feedback" className="px-3 py-1.5 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-600 transition shadow-sm">
+              Review Feedback
+            </Link>
+            <Link href="/dashboard/mentor-feedback" className={`px-3 py-1.5 border rounded-xl text-xs font-medium transition ${isDarkMode ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200' : 'border-[#d8c3ad] bg-[#fff8f4] hover:bg-[#fbebdd]'}`}>
+              Reply to Mentor
+            </Link>
+          </div>
         </div>
-      )}
+
+        {/* Quick Lab Notebook Logger Widget */}
+        <div className={`lg:col-span-6 rounded-2xl border p-6 shadow-xs flex flex-col justify-between transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-inherit">
+              <span className="text-sm font-bold">Quick Lab Logger</span>
+              <i className="fa-solid fa-flask-vial text-amber-500"></i>
+            </div>
+            
+            <form onSubmit={handleAddLog} className="space-y-3 mt-3 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1">Batch Sample ID</label>
+                <input 
+                  type="text" 
+                  value={sampleId} 
+                  onChange={(e) => setSampleId(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Experimental Metric / Parameter</label>
+                <input 
+                  type="text" 
+                  value={experimentalMetric}
+                  onChange={(e) => setExperimentalMetric(e.target.value)}
+                  placeholder="e.g. +12dB amplification boost" 
+                  className={`w-full px-3 py-2 rounded-xl outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Brief Experimental Note</label>
+                <textarea 
+                  value={experimentalNote}
+                  onChange={(e) => setExperimentalNote(e.target.value)}
+                  placeholder="Record resonance observations or acoustic tuning..." 
+                  rows={2}
+                  className={`w-full px-3 py-2 rounded-xl outline-none border resize-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
+                ></textarea>
+              </div>
+
+              <button 
+                type="submit"
+                disabled={submitting}
+                className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                <i className="fa-solid fa-floppy-disk"></i>
+                <span>{submitting ? 'Committing...' : 'Commit Entry to Lab Ledger'}</span>
+              </button>
+            </form>
+          </div>
+        </div>
+
+      </div>
 
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs">

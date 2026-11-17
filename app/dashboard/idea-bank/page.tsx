@@ -33,6 +33,9 @@ export default function IdeaBankPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<'student' | 'mentor'>('student')
 
+  // State untuk melacak apakah user sudah punya proyek aktif
+  const [hasActiveProject, setHasActiveProject] = useState(false)
+
   const [selectedIdeaDetail, setSelectedIdeaDetail] = useState<Idea | null>(null)
 
   const [title, setTitle] = useState('')
@@ -50,10 +53,33 @@ export default function IdeaBankPage() {
 
     const { data: { session } } = await supabase.auth.getSession()
     const email = session?.user?.email || ''
+    const userId = session?.user?.id || null
+
     if (email.includes('mentor') || email === 'plego@gmail.com') {
       setCurrentUserRole('mentor')
     } else {
       setCurrentUserRole('student')
+    }
+
+    // CEK KETAT: Apakah user sudah memiliki proyek aktif (di tabel projects atau ide berstatus Prototype)
+    if (userId) {
+      const { data: existingProjects } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', userId)
+        .in('approval_status', ['in_progress', 'pending_review'])
+
+      const { data: existingPrototypes } = await supabase
+        .from('ideas')
+        .select('*')
+        .eq('author_id', userId)
+        .eq('status', 'Prototype')
+
+      if ((existingProjects && existingProjects.length > 0) || (existingPrototypes && existingPrototypes.length > 0)) {
+        setHasActiveProject(true)
+      } else {
+        setHasActiveProject(false)
+      }
     }
 
     const { data } = await supabase
@@ -215,7 +241,13 @@ export default function IdeaBankPage() {
     }
   }
 
+  // VALIDASI MUTLAK: TOLAK JIKA SUDAH ADA PROYEK AKTIF
   async function handlePromoteIdea(item: Idea) {
+    if (hasActiveProject && currentUserRole === 'student') {
+      showToast('⚠️ You already have an active project! Finish and get mentor approval before promoting a new one.')
+      return
+    }
+
     if (item.status !== 'Approved') {
       showToast('Only approved ideas can be promoted to the project workspace!')
       return
@@ -223,24 +255,32 @@ export default function IdeaBankPage() {
 
     const { data: { session } } = await supabase.auth.getSession()
     const currentUserId = session?.user?.id || null
-    const currentName = session?.user?.user_metadata?.full_name || item.author_name || 'Desti A.'
+
+    if (!currentUserId) return
+
+    const { data: memberData } = await supabase
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', currentUserId)
+      .maybeSingle()
 
     const projectPayload = {
+      id: item.id,
+      project_code: `PRJ-${item.id}`,
       title: item.title,
-      description: item.description || item.problem_statement || "Promoted from Idea Bank",
-      status: 'Backlog',
-      priority: 'Medium',
-      assignee: currentName,
+      subtitle: item.problem_statement || item.description || "Promoted from Idea Bank",
+      team_id: memberData?.team_id || null,
       user_id: currentUserId,
+      approval_status: 'in_progress',
       created_at: new Date().toISOString()
     }
 
     const { error: insertError } = await supabase
-      .from('project_tasks')
+      .from('projects')
       .insert([projectPayload])
 
     if (insertError) {
-      showToast('Failed to promote idea: ' + insertError.message)
+      showToast('Failed to promote idea to workspace: ' + insertError.message)
       return
     }
 
@@ -249,6 +289,7 @@ export default function IdeaBankPage() {
       .update({ status: 'Prototype' })
       .eq('id', item.id)
 
+    setHasActiveProject(true)
     showToast(`Successfully promoted "${item.title}" to Project Workspace! 🚀`)
     fetchIdeas()
   }
@@ -268,6 +309,20 @@ export default function IdeaBankPage() {
 
   return (
     <div className="space-y-6 relative">
+      {hasActiveProject && currentUserRole === 'student' && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-4 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-500 grid place-items-center shrink-0">
+              <i className="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div>
+              <b className="font-bold text-amber-600 dark:text-amber-400">Active Project In Progress</b>
+              <p className="text-slate-600 dark:text-slate-400">You currently have an active project in your workspace. Complete and submit it for mentor approval before promoting another idea.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-xs"></i>
@@ -435,10 +490,15 @@ export default function IdeaBankPage() {
                     {item.status === 'Approved' && (
                       <button 
                         onClick={() => handlePromoteIdea(item)}
-                        className="py-2 px-3 rounded-xl text-xs font-bold bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                        title="Promote to Project Workspace"
+                        disabled={hasActiveProject && currentUserRole === 'student'}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 ${
+                          hasActiveProject && currentUserRole === 'student'
+                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600'
+                            : 'bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] cursor-pointer'
+                        }`}
+                        title={hasActiveProject && currentUserRole === 'student' ? 'Finish active project first' : 'Promote to Project Workspace'}
                       >
-                        <i className="fa-solid fa-rocket"></i> Promote
+                        <i className="fa-solid fa-rocket"></i> {hasActiveProject && currentUserRole === 'student' ? 'Locked' : 'Promote'}
                       </button>
                     )}
                   </div>
@@ -537,14 +597,19 @@ export default function IdeaBankPage() {
               {selectedIdeaDetail.status === 'Approved' && (
                 <button 
                   type="button" 
+                  disabled={hasActiveProject && currentUserRole === 'student'}
                   onClick={() => {
                     const targetItem = selectedIdeaDetail;
                     setSelectedIdeaDetail(null);
                     handlePromoteIdea(targetItem);
                   }}
-                  className="px-5 py-2 text-xs font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer flex items-center gap-1.5"
+                  className={`px-5 py-2 text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 ${
+                    hasActiveProject && currentUserRole === 'student'
+                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600'
+                      : 'bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] cursor-pointer'
+                  }`}
                 >
-                  <i className="fa-solid fa-rocket"></i> Promote to Project Workspace
+                  <i className="fa-solid fa-rocket"></i> {hasActiveProject && currentUserRole === 'student' ? 'Project Active (Locked)' : 'Promote to Project Workspace'}
                 </button>
               )}
             </div>

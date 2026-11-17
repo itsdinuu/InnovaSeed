@@ -27,16 +27,15 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   // State untuk Dropdown Menu Competition di Sidebar (Default Terbuka jika berada di area competition)
   const [isCompetitionOpen, setIsCompetitionOpen] = useState(pathname?.includes('/competition') ?? true)
 
-  // State for Settings & Team Management Modal (Including Mentor Code)
+  // State for Settings & Team Management Modal (Mentor Code Only, no manual add member)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [formTeamName, setFormTeamName] = useState('Independent Innovator')
   const [formLeadName, setFormLeadName] = useState('Innovator')
   const [formTrack, setFormTrack] = useState('National Science Fair Track')
   const [formMentorCode, setFormMentorCode] = useState('')
   
-  // Team members state
+  // Team members state (Synced from Database / Mentor)
   const [teamMembers, setTeamMembers] = useState<string[]>([])
-  const [newMemberName, setNewMemberName] = useState('')
   const [teamRecordId, setTeamRecordId] = useState<number | null>(null)
 
   // Hover Popup State for Team Info (Online Status)
@@ -181,34 +180,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     router.push('/login')
   }
 
-  const handleAddMember = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newMemberName.trim()) return
-
-    const updatedMembers = [...teamMembers, newMemberName.trim()]
-    setTeamMembers(updatedMembers)
-    setNewMemberName('')
-
-    if (teamRecordId) {
-      await supabase
-        .from('teams')
-        .update({ members: updatedMembers })
-        .eq('id', teamRecordId)
-    }
-  }
-
-  const handleRemoveMember = async (indexToRemove: number) => {
-    const updatedMembers = teamMembers.filter((_, idx) => idx !== indexToRemove)
-    setTeamMembers(updatedMembers)
-
-    if (teamRecordId) {
-      await supabase
-        .from('teams')
-        .update({ members: updatedMembers })
-        .eq('id', teamRecordId)
-    }
-  }
-
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault()
     setTeamName(formTeamName)
@@ -221,7 +192,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         .update({
           team_name: formTeamName,
           lead_name: formLeadName,
-          members: teamMembers,
           cohort_batch: formTrack,
           mentor_code: formMentorCode
         })
@@ -245,7 +215,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     }
 
     setIsSettingsOpen(false)
-    setToastMessage("Realtime Team & Mentor Code synced successfully!")
+    setToastMessage("Team settings & mentor code synced successfully!")
     setTimeout(() => setToastMessage(null), 4000)
   }
 
@@ -263,7 +233,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Global Sidebar */}
-      <aside className={`hidden lg:flex flex-col w-64 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>        <div className="flex items-center gap-3 mb-5">
+      <aside className={`hidden lg:flex flex-col w-64 shrink-0 border-r p-4 sticky top-0 h-screen transition-colors overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-[#d8c3ad]'}`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+        <div className="flex items-center gap-3 mb-5">
           <Image
             src="/InnovaSeed-Logo.png"
             alt="InnovaSeed Logo"
@@ -294,7 +265,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Navigation Menu */}
-        <nav className="space-y-1 text-sm font-sans" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>          {isJudgeArea ? (
+        <nav className="space-y-1 text-sm font-sans" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+          {isJudgeArea ? (
             <>
               <Link href="/dashboard/judges/queue" className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition ${pathname === '/dashboard/judges/queue' ? (isDarkMode ? 'bg-amber-500/20 text-amber-300 font-semibold border-l-[3px] border-[#F59E0B]' : 'bg-[#FEF3C7] text-[#855300] font-semibold border-l-[3px] border-[#F59E0B]') : (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]')}`}>
                 <i className="fa-solid fa-clipboard-list w-4 text-center"></i>Assigned Evaluation Queue
@@ -422,7 +394,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 <div className={`absolute bottom-full left-0 right-0 mb-2 p-3 rounded-2xl border shadow-xl transition-all duration-300 transform translate-y-0 opacity-100 z-30 space-y-2 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/50' : 'bg-white border-[#d8c3ad] text-[#221a12] shadow-amber-900/10'}`}>
                   <div className="flex items-center justify-between text-[11px] font-bold border-b pb-1.5 border-inherit">
                     <span className="flex items-center gap-1.5">
-                      <i className="fa-solid fa-users text-amber-500"></i> Team Members
+                      <i className="fa-solid fa-users text-amber-500"></i> Team Members (Managed by Mentor)
                     </span>
                     <span className="text-amber-500 text-[10px]">
                       {formMentorCode ? `Code: ${formMentorCode}` : 'No Mentor Code'}
@@ -449,7 +421,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                           </span>
                           <span className="truncate text-slate-400 dark:text-slate-300">{member}</span>
                         </div>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-500 font-medium">Active</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-500 font-medium">Synced</span>
                       </div>
                     ))}
                   </div>
@@ -488,7 +460,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 onClick={() => setIsSettingsOpen(true)}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-[#534434] hover:bg-[#fff1e5]'}`}
               >
-                <i className="fa-solid fa-gear w-4 text-center text-amber-500"></i>Settings &amp; Team
+                <i className="fa-solid fa-gear w-4 text-center text-amber-500"></i>Settings &amp; Mentor Code
               </button>
 
               <div className="flex items-center gap-3">
@@ -556,13 +528,13 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Settings & Team Management Modal */}
+      {/* Settings & Mentor Code Modal (Team members managed by mentor removed) */}
       {isSettingsOpen && !isJudgeArea && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
             <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
               <h3 className="font-bold text-base flex items-center gap-2">
-                <i className="fa-solid fa-gear text-amber-500"></i> Settings &amp; Team Setup
+                <i className="fa-solid fa-gear text-amber-500"></i> Settings &amp; Mentor Code
               </h3>
               <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <i className="fa-solid fa-xmark text-lg"></i>
@@ -615,43 +587,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </select>
               </div>
 
-              <div className="space-y-2 pt-2 border-t border-inherit">
-                <label className="block font-semibold">Team Members (Self-Managed)</label>
-                <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-inherit bg-amber-500/5">
-                  {teamMembers.length > 0 ? (
-                    teamMembers.map((member, idx) => (
-                      <span key={idx} className={`text-xs px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-[#d8c3ad] text-[#534434]'}`}>
-                        <i className="fa-solid fa-user text-[10px] text-amber-500"></i> {member}
-                        <button 
-                          type="button" 
-                          onClick={() => handleRemoveMember(idx)}
-                          className="ml-1 text-red-500 hover:text-red-700 font-bold cursor-pointer"
-                        >
-                          &times;
-                        </button>
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-slate-400 italic">No members added yet. Add team members freely!</span>
-                  )}
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <input 
-                    type="text"
-                    placeholder="Add member name..."
-                    value={newMemberName}
-                    onChange={(e) => setNewMemberName(e.target.value)}
-                    className={`flex-1 rounded-xl px-3 py-2 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
-                  />
-                  <button 
-                    type="button"
-                    onClick={handleAddMember}
-                    className="px-4 py-2 font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition cursor-pointer"
-                  >
-                    Add
-                  </button>
-                </div>
+              <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[11px]">
+                <i className="fa-solid fa-circle-info mr-1"></i> Team roster and member assignments are managed directly by your assigned mentor via Team Management.
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-inherit">
