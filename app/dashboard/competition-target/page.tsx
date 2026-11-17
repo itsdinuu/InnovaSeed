@@ -117,9 +117,16 @@ export default function CompetitionTargetPage() {
   const [currentMonth, setCurrentMonth] = useState<number>(10) // 10 = November (0-indexed)
   
   const [selectedDate, setSelectedDate] = useState<string>('2026-11-16')
+  const [dateCompetitions, setDateCompetitions] = useState<CompetitionItem[]>([])
   const [activeModalCompetition, setActiveModalCompetition] = useState<CompetitionItem | null>(null)
+  
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [selectedKeywordFilter, setSelectedKeywordFilter] = useState<string>('All')
+  
+  
+  const todayString = typeof window !== 'undefined' 
+      ? new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })
+      : 'Today'
 
   // Fetch competitions from Supabase
   useEffect(() => {
@@ -143,9 +150,14 @@ export default function CompetitionTargetPage() {
           deadline: item.deadline ?? ''
         }))
         setCompetitions(mapped)
-        setActiveModalCompetition(mapped[3] || mapped[0])
+        
+        const initialComps = mapped.filter(c => c.deadline === '2026-11-16')
+        setDateCompetitions(initialComps)
+        setActiveModalCompetition(initialComps[0] || mapped[0])
       } else {
-        setActiveModalCompetition(FALLBACK_COMPETITIONS[3])
+        const initialComps = FALLBACK_COMPETITIONS.filter(c => c.deadline === '2026-11-16')
+        setDateCompetitions(initialComps)
+        setActiveModalCompetition(initialComps[0])
       }
     }
     fetchCompetitionsFromSupabase()
@@ -192,11 +204,28 @@ export default function CompetitionTargetPage() {
     return `${currentYear}-${formattedMonth}-${formattedDay}`
   })
 
+  // Filter kompetisi berdasarkan keyword yang dipilih
+  const filteredCompetitions = competitions.filter(comp => {
+    if (selectedKeywordFilter === 'All') return true
+    return comp.keywords.includes(selectedKeywordFilter)
+  })
+
+  // Helper untuk mengecek apakah suatu tanggal masuk dalam masa aktif pendaftaran
+  const getCompetitionsForDate = (dateStr: string) => {
+    return filteredCompetitions.filter(c => {
+      if (!c.deadline) return false
+      const deadlineDate = new Date(c.deadline)
+      const startRangeStr = `${deadlineDate.getFullYear()}-${String(deadlineDate.getMonth() + 1).padStart(2, '0')}-01`
+      return dateStr >= startRangeStr && dateStr <= c.deadline
+    })
+  }
+
   const handleDateClick = (dateStr: string) => {
     setSelectedDate(dateStr)
-    const found = competitions.find(c => c.deadline === dateStr)
-    if (found) {
-      setActiveModalCompetition(found)
+    const matchedComps = getCompetitionsForDate(dateStr)
+    setDateCompetitions(matchedComps)
+    if (matchedComps.length > 0) {
+      setActiveModalCompetition(matchedComps[0])
     } else {
       setActiveModalCompetition(null)
     }
@@ -216,15 +245,23 @@ export default function CompetitionTargetPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-amber-500">
-          <i className="fa-solid fa-trophy"></i> Official Repository &amp; Competition Calendar
+      {/* Header dengan Live Date Badge */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-amber-500">
+            <i className="fa-solid fa-trophy"></i> Official Repository &amp; Competition Calendar
+          </div>
+          <h1 className="text-2xl font-extrabold tracking-tight mt-1">Competition Target &amp; Calendar</h1>
+          <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+            Explore active registration periods leading up to official competition deadlines. Click any date to view open submissions.
+          </p>
         </div>
-        <h1 className="text-2xl font-extrabold tracking-tight mt-1">Competition Target &amp; Calendar</h1>
-        <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-          Switch months on the calendar to explore official competition deadlines from Supabase, and sync them to your preparation goals.
-        </p>
+
+        {/* Live Date Badge */}
+        <div className={`px-4 py-2 rounded-2xl text-xs font-bold border flex items-center gap-2 self-start md:self-auto shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-amber-400' : 'bg-white border-[#d8c3ad] text-[#855300]'}`}>
+          <i className="fa-regular fa-calendar-check text-amber-500"></i>
+          <span>Today: {todayString || 'Loading...'}</span>
+        </div>
       </div>
 
       {/* Keyword Filter Chips */}
@@ -245,10 +282,11 @@ export default function CompetitionTargetPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Grid Layout (7 untuk Kalender, 5 untuk Detail Card) */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         
-        {/* Left Column: Interactive Calendar with Month Switcher */}
-        <div className={`lg:col-span-2 rounded-2xl border p-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+        {/* Left Column: Interactive Calendar (7 Cols) */}
+        <div className={`xl:col-span-7 rounded-2xl border p-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
           
           {/* Calendar Header with Navigation Controls */}
           <div className="flex items-center justify-between mb-6 border-b pb-3 border-inherit">
@@ -278,15 +316,16 @@ export default function CompetitionTargetPage() {
               <div key={idx} className="font-bold text-slate-400 py-1">{d}</div>
             ))}
 
-            {/* Dynamic offset spacing for first day of the month */}
             {Array.from({ length: startDayOffset }).map((_, index) => (
               <div key={`empty-${index}`} className="aspect-square"></div>
             ))}
 
             {calendarDays.map((dateStr) => {
               const dayNumber = parseInt(dateStr.split('-')[2])
-              const hasCompetition = competitions.some(c => c.deadline === dateStr)
+              const dayComps = getCompetitionsForDate(dateStr)
+              const hasActiveCompetition = dayComps.length > 0
               const isSelected = selectedDate === dateStr
+              const isDeadlineDate = dayComps.some(c => c.deadline === dateStr)
 
               return (
                 <button
@@ -295,14 +334,16 @@ export default function CompetitionTargetPage() {
                   className={`aspect-square rounded-xl p-1 flex flex-col items-center justify-between transition relative cursor-pointer border ${
                     isSelected 
                       ? 'bg-amber-500 text-slate-950 font-extrabold border-amber-600 shadow-md' 
-                      : hasCompetition
-                        ? (isDarkMode ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold' : 'bg-[#FEF3C7] border-amber-400 text-[#855300] font-bold')
-                        : (isDarkMode ? 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-800' : 'bg-[#fff8f4] border-[#d8c3ad]/50 text-[#221a12] hover:bg-[#fbebdd]')
+                      : isDeadlineDate
+                        ? (isDarkMode ? 'bg-amber-500/30 border-amber-400 text-amber-200 font-extrabold' : 'bg-amber-200 border-amber-500 text-amber-900 font-extrabold')
+                        : hasActiveCompetition
+                          ? (isDarkMode ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 font-bold' : 'bg-[#FEF3C7] border-amber-300 text-[#855300] font-bold')
+                          : (isDarkMode ? 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-800' : 'bg-[#fff8f4] border-[#d8c3ad]/50 text-[#221a12] hover:bg-[#fbebdd]')
                   }`}
                 >
                   <span className="text-xs">{dayNumber}</span>
-                  {hasCompetition && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                  {hasActiveCompetition && (
+                    <span className={`w-1.5 h-1.5 rounded-full ${isDeadlineDate ? 'bg-amber-600 animate-bounce' : 'bg-amber-500'}`}></span>
                   )}
                 </button>
               )
@@ -310,17 +351,42 @@ export default function CompetitionTargetPage() {
           </div>
         </div>
 
-        {/* Right Column: Competition Popup Card Details */}
-        <div className={`rounded-2xl border p-6 shadow-sm flex flex-col justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
+        {/* Right Column: Competition Popup Card Details (5 Cols) */}
+        <div className={`xl:col-span-5 rounded-2xl border p-6 shadow-sm flex flex-col justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'}`}>
           <div>
-            <div className="flex items-center justify-between border-b pb-3 border-inherit mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3 border-inherit mb-4">
               <span className="flex items-center gap-1.5 text-xs font-extrabold text-amber-600">
-                <i className="fa-solid fa-award"></i> {activeModalCompetition?.statusBadge || 'Competition Info'}
+                <i className="fa-solid fa-award"></i> {activeModalCompetition?.statusBadge || 'Open Registration'}
               </span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-500/10 text-slate-400">
-                {selectedDate}
+              <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 border border-amber-500/30 whitespace-nowrap">
+                Open until {activeModalCompetition?.deadline || selectedDate}
               </span>
             </div>
+
+            {/* Selector jika ada lebih dari 1 kompetisi aktif di tanggal tersebut */}
+            {dateCompetitions.length > 1 && (
+              <div className="mb-4">
+                <label className="text-[11px] font-bold text-slate-400 block mb-1.5">
+                  Active competitions on this date ({dateCompetitions.length}):
+                </label>
+                <div className="flex flex-col gap-1.5">
+                  {dateCompetitions.map((comp) => (
+                    <button
+                      key={comp.id}
+                      onClick={() => setActiveModalCompetition(comp)}
+                      className={`text-left px-3 py-2 rounded-xl text-xs font-bold transition border flex items-center justify-between gap-2 ${
+                        activeModalCompetition?.id === comp.id
+                          ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-sm'
+                          : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-[#fffcf9] border-[#d8c3ad] text-[#534434] hover:bg-[#fbebdd]')
+                      }`}
+                    >
+                      <span className="truncate">{comp.title}</span>
+                      <span className="text-[10px] opacity-75 font-normal whitespace-nowrap">({comp.deadline})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {activeModalCompetition ? (
               <div className="space-y-4 text-xs">
@@ -333,6 +399,10 @@ export default function CompetitionTargetPage() {
 
                 {/* Detail Attributes Table */}
                 <div className={`rounded-xl border overflow-hidden divide-y ${isDarkMode ? 'border-slate-800 divide-slate-800 bg-slate-950/40' : 'border-[#d8c3ad] divide-[#d8c3ad] bg-[#fffcf9]'}`}>
+                  <div className="flex justify-between px-3 py-2">
+                    <span className="text-slate-400 font-medium">Registration Status</span>
+                    <span className="font-bold text-emerald-500 text-right">🟢 Open Until {activeModalCompetition.deadline}</span>
+                  </div>
                   <div className="flex justify-between px-3 py-2">
                     <span className="text-slate-400 font-medium">Category / Field</span>
                     <span className="font-bold text-right">{activeModalCompetition.category}</span>
@@ -349,17 +419,11 @@ export default function CompetitionTargetPage() {
                     <span className="text-slate-400 font-medium">Prestige Rating</span>
                     <span className="font-bold text-right">{activeModalCompetition.prestige}</span>
                   </div>
-                  <div className="flex justify-between px-3 py-2">
-                    <span className="text-slate-400 font-medium">Schedule Cycle</span>
-                    <span className="font-bold text-right">{activeModalCompetition.scheduleType}</span>
-                  </div>
                 </div>
 
-                {activeModalCompetition.notes && (
-                  <div className={`p-3 rounded-xl border text-[11px] ${isDarkMode ? 'bg-amber-500/10 border-amber-500/30 text-amber-200' : 'bg-[#FEF3C7] border-amber-300 text-[#855300]'}`}>
-                    <strong>Note:</strong> {activeModalCompetition.notes}
-                  </div>
-                )}
+                <div className={`p-3 rounded-xl border text-[11px] ${isDarkMode ? 'bg-amber-500/10 border-amber-500/30 text-amber-200' : 'bg-[#FEF3C7] border-amber-300 text-[#855300]'}`}>
+                  <strong>Submission Info:</strong> Rolling registration is active on this date. Make sure to submit your team project before the deadline hits!
+                </div>
 
                 <div className={`p-3 rounded-xl border text-[11px] ${isDarkMode ? 'bg-slate-800/60 border-slate-700 text-slate-300' : 'bg-[#fff1e5] border-[#d8c3ad] text-[#534434]'}`}>
                   {activeModalCompetition.description}
@@ -379,7 +443,7 @@ export default function CompetitionTargetPage() {
             ) : (
               <div className="text-center py-16 text-slate-400 space-y-2">
                 <i className="fa-regular fa-calendar-xmark text-3xl"></i>
-                <p className="text-xs">No competition scheduled for {selectedDate}. Please select another date marked with the orange dot indicator!</p>
+                <p className="text-xs">No active competitions for {selectedDate}. Click on a date highlighted in amber to check open registrations!</p>
               </div>
             )}
           </div>
