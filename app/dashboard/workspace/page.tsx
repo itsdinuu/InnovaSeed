@@ -55,7 +55,7 @@ export default function ProjectWorkspacePage() {
   const [assignee, setAssignee] = useState('Desti Andhini')
   const [submittingMentor, setSubmittingMentor] = useState(false)
 
-  // --- FETCH DATA WORKSPACE DENGAN FLEKSIBILITAS IDEA BANK ---
+  // --- FETCH DATA WORKSPACE DENGAN ISOLASI USER ID ---
   const fetchWorkspaceData = useCallback(async () => {
     setLoading(true)
 
@@ -64,9 +64,8 @@ export default function ProjectWorkspacePage() {
       const userId = session.user.id
       setCurrentUserId(userId)
       
-      const activeProfileName = localStorage.getItem('active_profile_name')
       const authDefaultName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Desti Andhini'
-      const finalUserName = activeProfileName || authDefaultName
+      const finalUserName = authDefaultName
       
       setCurrentUserName(finalUserName)
       setAssignee(finalUserName)
@@ -81,7 +80,7 @@ export default function ProjectWorkspacePage() {
       const currentTeamId = memberData?.team_id || null
       let foundProject = false
 
-      // 2. Ambil Anggota Tim Terlebih Dahulu untuk Setup List Team Members
+      // 2. Setup List Team Members
       let mappedMembers: TeamMember[] = [{ id: userId, name: finalUserName, role: 'leader', avatarColor: 'bg-amber-500 text-slate-950' }]
       
       if (currentTeamId) {
@@ -101,10 +100,11 @@ export default function ProjectWorkspacePage() {
         }
       }
 
-      // 3. CARI PROYEK DARI TABEL `projects`
+      // 3. CARI PROYEK DARI TABEL `projects` KHUSUS USER INI
       const { data: projectData, error: projError } = await supabase
         .from('projects')
         .select('*')
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(1)
 
@@ -123,11 +123,12 @@ export default function ProjectWorkspacePage() {
         foundProject = true
       }
 
-      // 4. FALLBACK: AMBIL IDE TERBARU DARI TABEL `ideas` (Idea Bank)
+      // 4. FALLBACK: AMBIL IDE TERBARU DARI TABEL `ideas` (Idea Bank) KHUSUS USER INI
       if (!foundProject) {
         const { data: userIdeas, error: ideaErr } = await supabase
           .from('ideas')
           .select('*')
+          .eq('author_id', userId)
           .in('status', ['Prototype', 'prototype', 'Approved', 'approved', 'Promoted', 'promoted'])
           .order('id', { ascending: false })
           .limit(1)
@@ -161,7 +162,7 @@ export default function ProjectWorkspacePage() {
         })
       }
 
-      // 5. Ambil Task Kanban
+      // 5. Ambil Task Kanban Khusus User Ini
       const { data: taskData, error: taskError } = await supabase
         .from('project_tasks')
         .select('*')

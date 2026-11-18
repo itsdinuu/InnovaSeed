@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 
-
 type TeamMemberProfile = {
   id: string
   name: string
@@ -102,8 +101,11 @@ export default function LoginPage() {
         }
       }
 
+
       // 3. If student role, check team and team members for shared account profile selection modal
-      if (resolvedRole === 'student') {
+      const hasSkippedProfile = sessionStorage.getItem(`skip_profile_modal_${user.id}`)
+
+      if (resolvedRole === 'student' && !hasSkippedProfile) {
         const { data: teamData } = await supabase
           .from('teams')
           .select('id')
@@ -118,14 +120,14 @@ export default function LoginPage() {
 
           if (members && members.length > 0) {
             setTeamMembersList(members)
-            setShowProfileModal(true)
+            setShowProfileModal(true) // <- Pop-up akan muncul di sini saat login awal!
             setLoading(false)
             return
           }
         }
       }
 
-      // Default redirect for non-student or standalone accounts
+      // Default redirect for non-student, standalone accounts, or skipped modal
       const selectedConfig = roleConfig[resolvedRole]
       router.replace(selectedConfig.link)
 
@@ -148,17 +150,16 @@ export default function LoginPage() {
     const targetMember = teamMembersList.find(m => m.id === selectedProfileId)
     if (!targetMember) return
 
-    // If member requires password setup or personal verification
     if (targetMember.role === 'member' && !targetMember.has_password && !memberPassword) {
       setModalError('Please set a personal security password for your profile.')
       return
     }
 
-    // Save active profile reference into sessionStorage for layout synchronization
+    // Save active profile reference into sessionStorage
     sessionStorage.setItem(`active_profile_${authUserId}`, targetMember.id)
     sessionStorage.setItem(`active_member_name_${authUserId}`, targetMember.name)
+    sessionStorage.setItem(`skip_profile_modal_${authUserId}`, 'true')
 
-    // If member has no password yet, update state in database
     if (targetMember.role === 'member' && !targetMember.has_password && memberPassword) {
       await supabase
         .from('team_members')
@@ -166,6 +167,20 @@ export default function LoginPage() {
         .eq('id', targetMember.id)
     }
 
+    router.replace('/dashboard/student')
+  }
+
+  const handleSkipProfileModal = () => {
+    if (authUserId) {
+      // Ambil profil pertama dari daftar tim (biasanya Lead/Leader) sebagai default session
+      const defaultMember = teamMembersList[0]
+      if (defaultMember) {
+        sessionStorage.setItem(`active_profile_${authUserId}`, defaultMember.id)
+        sessionStorage.setItem(`active_member_name_${authUserId}`, defaultMember.name)
+      }
+      sessionStorage.setItem(`skip_profile_modal_${authUserId}`, 'true')
+    }
+    setShowProfileModal(false)
     router.replace('/dashboard/student')
   }
 
@@ -401,14 +416,23 @@ export default function LoginPage() {
       {showProfileModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-500/30 space-y-5 animate-in fade-in zoom-in duration-200">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 grid place-items-center font-bold">
-                <i className="fa-solid fa-users"></i>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 grid place-items-center font-bold">
+                  <i className="fa-solid fa-users"></i>
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Select Active Team Profile</h3>
+                  <p className="text-xs text-slate-500">Choose your name to enter the workspace session.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-base text-slate-900">Select Active Team Profile</h3>
-                <p className="text-xs text-slate-500">Choose your name to enter the workspace session.</p>
-              </div>
+              <button 
+                type="button" 
+                onClick={handleSkipProfileModal}
+                className="text-xs text-slate-400 hover:text-slate-600 font-medium cursor-pointer"
+              >
+                Skip →
+              </button>
             </div>
 
             {modalError && (
@@ -468,12 +492,21 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <button
-                type="submit"
-                className="w-full py-3 bg-[#F59E0B] text-slate-950 font-bold text-sm rounded-xl hover:bg-amber-600 transition shadow-md cursor-pointer mt-2"
-              >
-                Continue to Dashboard →
-              </button>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSkipProfileModal}
+                  className="w-1/3 py-3 bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl hover:bg-slate-200 transition cursor-pointer"
+                >
+                  Skip Modal
+                </button>
+                <button
+                  type="submit"
+                  className="w-2/3 py-3 bg-[#F59E0B] text-slate-950 font-bold text-sm rounded-xl hover:bg-amber-600 transition shadow-md cursor-pointer"
+                >
+                  Continue to Dashboard →
+                </button>
+              </div>
             </form>
           </div>
         </div>
