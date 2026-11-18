@@ -21,7 +21,7 @@ export default function MentorDashboardClient() {
   const [mentorComment, setMentorComment] = useState('')
   
   const [clearanceQueue, setClearanceQueue] = useState<EthicsReview[]>([
-    { id: '1', student: 'Desti Andhini', project: 'Young Innovator LMS (InnovaSeed v2)', clearance: 'Pending', reviewStatus: 'Open', peerSigned: true },
+    { id: '1', student: 'Desti Andhini', project: 'InnovaSeed v2 (Young Innovator LMS)', clearance: 'Pending', reviewStatus: 'Open', peerSigned: true },
     { id: '2', student: 'Aisha N.', project: 'Autonomous Soil Sensing Mesh', clearance: 'Approved', reviewStatus: 'Open', peerSigned: true },
     { id: '3', student: 'Noah P.', project: 'Biopolymer Water Filtration Loop', clearance: 'Pending', reviewStatus: 'Locked', peerSigned: false }
   ])

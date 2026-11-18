@@ -46,8 +46,8 @@ export default function RegisterPage() {
     setErrorMessage('')
 
     try {
-      // 1. Register account with Supabase Auth & kirim metadata khusus siswa
-      const { error } = await supabase.auth.signUp({
+      // 1. Mendaftarkan akun ke Supabase Auth dengan metadata lengkap
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
@@ -62,15 +62,66 @@ export default function RegisterPage() {
         }
       })
 
-      if (error) throw error
+      if (authError) throw authError
 
-      // 2. Jika sukses, tampilkan toast dan arahkan ke halaman login
-      showCustomToast('Team account registration successful! Your profile has been automatically created. Please sign in.')
+      const userId = authData.user?.id
+
+      if (userId) {
+        // 2. Insert atau Upsert profil ketua ke tabel `profiles`
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: userId,
+            full_name: formData.leadName,
+            role: 'student',
+            institution: formData.institution
+          })
+
+        if (profileError) {
+          console.warn('Profiles table warning:', profileError.message)
+        }
+
+        // 3. Masukkan data ke tabel `teams` dengan lead_id yang unik per akun
+        const { data: teamRecord, error: teamError } = await supabase
+          .from('teams')
+          .insert([{
+            team_name: formData.teamName,
+            lead_id: userId,
+            institution: formData.institution,
+            research_field: formData.researchField,
+            team_size: formData.teamSize,
+            mentor_code: ''
+          }])
+          .select()
+          .single()
+
+        if (teamError) throw teamError
+
+        // 4. Masukkan Ketua sebagai anggota pertama di tabel `team_members`
+        if (teamRecord) {
+          const { error: memberError } = await supabase
+            .from('team_members')
+            .insert([{
+              team_id: teamRecord.id,
+              name: formData.leadName,
+              role: 'leader',
+              has_password: true
+            }])
+
+          if (memberError) throw memberError
+        }
+      }
+
+      showCustomToast('Team account registration successful! Please sign in.')
       router.push('/login')
 
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An error occurred while registering with Supabase.'
-      setErrorMessage(message)
+      if (message.includes('already registered') || message.includes('already been registered')) {
+        setErrorMessage('This email is already registered. Please sign in instead.')
+      } else {
+        setErrorMessage(message)
+      }
     } finally {
       setLoading(false)
     }
@@ -305,8 +356,8 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <label className="flex gap-2 items-center text-xs text-slate-600 mt-4 cursor-pointer">
-            <input type="checkbox" defaultChecked required className="accent-amber-500 w-4 h-4 cursor-pointer" />
+          <label className="flex gap-2 items-center text-xs text-slate-600 mt-4">
+            <input type="checkbox" defaultChecked required className="accent-amber-500" />
             I agree to the <Link href="#" className="font-semibold underline text-slate-900">Terms of Use</Link> and <Link href="#" className="font-semibold underline text-slate-900">Research Data Protection Policy</Link> (ISO/IEC 17025).
           </label>
 
@@ -330,12 +381,9 @@ export default function RegisterPage() {
         </form>
       </main>
 
-      {/* Toast Notification Floating */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-[#1E293B] border border-amber-500/40 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-bounce">
-          <div className="w-6 h-6 rounded-full bg-amber-500 text-slate-900 grid place-items-center font-bold text-xs">
-            ✓
-          </div>
+          <div className="w-6 h-6 rounded-full bg-amber-500 text-slate-900 grid place-items-center font-bold text-xs">✓</div>
           <span className="text-xs font-medium">{toastMessage}</span>
         </div>
       )}

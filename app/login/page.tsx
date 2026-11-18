@@ -6,6 +6,14 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 
+
+type TeamMemberProfile = {
+  id: string
+  name: string
+  role: 'leader' | 'member'
+  has_password: boolean
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const [activeRole, setActiveRole] = useState<'student' | 'mentor' | 'judge'>('student')
@@ -15,6 +23,14 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+
+  // State for Team Profile Selection Modal (Shared Account Model)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [teamMembersList, setTeamMembersList] = useState<TeamMemberProfile[]>([])
+  const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [memberPassword, setMemberPassword] = useState('')
+  const [modalError, setModalError] = useState('')
+  const [authUserId, setAuthUserId] = useState('')
 
   const roleConfig = {
     student: {
@@ -58,7 +74,7 @@ export default function LoginPage() {
     setErrorMessage('')
 
     try {
-      // 1. Autentikasi akun dengan Supabase Auth
+      // 1. Authenticate account with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -66,31 +82,91 @@ export default function LoginPage() {
 
       if (authError) throw authError
 
-      // 2. Ambil data role asli dari tabel 'profiles' di database
-      let resolvedRole: 'student' | 'mentor' | 'judge' = activeRole
-      if (authData?.user) {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', authData.user.id)
-          .single()
+      const user = authData?.user
+      if (!user) throw new Error('Authentication user session not found.')
 
-        if (!profileError && profileData?.role) {
-          const dbRole = profileData.role.toLowerCase()
-          if (['student', 'mentor', 'judge'].includes(dbRole)) {
-            resolvedRole = dbRole as 'student' | 'mentor' | 'judge'
+      setAuthUserId(user.id)
+
+      // 2. Check actual role from 'profiles' table
+      let resolvedRole: 'student' | 'mentor' | 'judge' = activeRole
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (!profileError && profileData?.role) {
+        const dbRole = profileData.role.toLowerCase()
+        if (['student', 'mentor', 'judge'].includes(dbRole)) {
+          resolvedRole = dbRole as 'student' | 'mentor' | 'judge'
+        }
+      }
+
+      // 3. If student role, check team and team members for shared account profile selection modal
+      if (resolvedRole === 'student') {
+        const { data: teamData } = await supabase
+          .from('teams')
+          .select('id')
+          .eq('lead_id', user.id)
+          .maybeSingle()
+
+        if (teamData) {
+          const { data: members } = await supabase
+            .from('team_members')
+            .select('*')
+            .eq('team_id', teamData.id)
+
+          if (members && members.length > 0) {
+            setTeamMembersList(members)
+            setShowProfileModal(true)
+            setLoading(false)
+            return
           }
         }
       }
 
+      // Default redirect for non-student or standalone accounts
       const selectedConfig = roleConfig[resolvedRole]
       router.replace(selectedConfig.link)
+
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed. Please check your credentials.'
       setErrorMessage(message)
-    } finally {
       setLoading(false)
     }
+  }
+
+  // Handle Profile Selection from Pop-up Modal for Shared Account
+  const handleConfirmProfileSelection = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedProfileId) {
+      setModalError('Please select your team profile name.')
+      return
+    }
+
+    setModalError('')
+    const targetMember = teamMembersList.find(m => m.id === selectedProfileId)
+    if (!targetMember) return
+
+    // If member requires password setup or personal verification
+    if (targetMember.role === 'member' && !targetMember.has_password && !memberPassword) {
+      setModalError('Please set a personal security password for your profile.')
+      return
+    }
+
+    // Save active profile reference into sessionStorage for layout synchronization
+    sessionStorage.setItem(`active_profile_${authUserId}`, targetMember.id)
+    sessionStorage.setItem(`active_member_name_${authUserId}`, targetMember.name)
+
+    // If member has no password yet, update state in database
+    if (targetMember.role === 'member' && !targetMember.has_password && memberPassword) {
+      await supabase
+        .from('team_members')
+        .update({ has_password: true, password_hash: memberPassword })
+        .eq('id', targetMember.id)
+    }
+
+    router.replace('/dashboard/student')
   }
 
   const handleGoogleSSO = async () => {
@@ -320,6 +396,88 @@ export default function LoginPage() {
           </p>
         </div>
       </main> 
+
+      {/* TEAM PROFILE SELECTION MODAL (POP-UP AFTER SHARED ACCOUNT LOGIN) */}
+      {showProfileModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-500/30 space-y-5 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 grid place-items-center font-bold">
+                <i className="fa-solid fa-users"></i>
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Select Active Team Profile</h3>
+                <p className="text-xs text-slate-500">Choose your name to enter the workspace session.</p>
+              </div>
+            </div>
+
+            {modalError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 text-xs p-3 rounded-lg">
+                {modalError}
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmProfileSelection} className="space-y-4">
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {teamMembersList.map((member) => (
+                  <label
+                    key={member.id}
+                    onClick={() => setSelectedProfileId(member.id)}
+                    className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                      selectedProfileId === member.id
+                        ? 'border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20 shadow-sm'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="teamMemberProfile"
+                        checked={selectedProfileId === member.id}
+                        onChange={() => setSelectedProfileId(member.id)}
+                        className="accent-amber-500 w-4 h-4 cursor-pointer"
+                      />
+                      <div>
+                        <b className="block text-sm text-slate-900">{member.name}</b>
+                        <span className="text-[11px] text-slate-500 uppercase tracking-wide font-medium">
+                          {member.role === 'leader' ? 'Team Leader' : 'Team Member'}
+                        </span>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      member.role === 'leader' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {member.role === 'leader' ? 'Lead' : 'Member'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {selectedProfileId && teamMembersList.find(m => m.id === selectedProfileId)?.role === 'member' && !teamMembersList.find(m => m.id === selectedProfileId)?.has_password && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Set Personal Member Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={memberPassword}
+                    onChange={(e) => setMemberPassword(e.target.value)}
+                    placeholder="Enter personal login password..."
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm outline-none focus:border-amber-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">This password will secure your profile for future sessions on this team account.</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#F59E0B] text-slate-950 font-bold text-sm rounded-xl hover:bg-amber-600 transition shadow-md cursor-pointer mt-2"
+              >
+                Continue to Dashboard →
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

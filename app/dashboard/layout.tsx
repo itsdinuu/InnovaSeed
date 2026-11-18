@@ -20,27 +20,27 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const [userName, setUserName] = useState('Innovator')
+  const [userRoleBadge, setUserRoleBadge] = useState('Team Leader')
   const [teamName, setTeamName] = useState('Independent Innovator')
   const [competitionTrack, setCompetitionTrack] = useState('National Science Fair Track')
   const [unreadCount, setUnreadCount] = useState(0)
 
-  // State untuk Dropdown Menu Competition di Sidebar (Default Terbuka jika berada di area competition)
+  // State for Competition Dropdown Menu in Sidebar
   const [isCompetitionOpen, setIsCompetitionOpen] = useState(pathname?.includes('/competition') ?? true)
 
-  // State for Settings & Team Management Modal (Mentor Code Only, no manual add member)
+  // State for Settings & Team Management Modal
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [formTeamName, setFormTeamName] = useState('Independent Innovator')
   const [formLeadName, setFormLeadName] = useState('Innovator')
   const [formTrack, setFormTrack] = useState('National Science Fair Track')
   const [formMentorCode, setFormMentorCode] = useState('')
   
-  // Team members state (Synced from Database / Mentor)
+  // Team members state
   const [teamMembers, setTeamMembers] = useState<string[]>([])
   const [teamRecordId, setTeamRecordId] = useState<number | null>(null)
 
-  // Hover Popup State for Team Info (Online Status)
+  // Hover Popup State for Team Info
   const [isTeamHovered, setIsTeamHovered] = useState(false)
-
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   const { isDarkMode, toggleDarkMode } = useTheme()
@@ -78,64 +78,75 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         return
       }
 
-      let currentName = 'Innovator'
-
-      if (profileData && profileData.full_name) {
-        currentName = profileData.full_name
-      } else if (user.user_metadata?.lead_name) {
-        currentName = user.user_metadata.lead_name
-      } else if (user.email) {
-        const emailPrefix = user.email.split('@')[0].replace(/[0-9]/g, '').trim()
-        if (emailPrefix) {
-          currentName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1)
-        }
-      }
-
       const isJudgeRole = profileData?.role === 'judge' || pathname?.startsWith('/dashboard/judges')
       if (isJudgeRole) {
-        setUserName(currentName)
+        setUserName(profileData?.full_name || profileData?.name || user.user_metadata?.full_name || 'Evaluator')
+        setUserRoleBadge('Grand Jury Panel')
         setTeamName('Grand Jury Panel')
         setCompetitionTrack('Final Judging Panel')
-        setFormLeadName(currentName)
         fetchUnreadCount()
         return
       }
 
-      setUserName(currentName)
-      setFormLeadName(currentName)
-
+      // Fetch team data from `teams` table based on user_id (lead_id)
       const { data: teamData, error } = await supabase
         .from('teams')
         .select('*')
-        .limit(1)
-        .single()
+        .eq('lead_id', user.id)
+        .maybeSingle()
 
       if (!error && teamData) {
         setTeamRecordId(teamData.id)
-        setTeamName(teamData.team_name)
-        setFormTeamName(teamData.team_name)
-        if (teamData.members && Array.isArray(teamData.members)) {
-          setTeamMembers(teamData.members)
-        }
+        setTeamName(teamData.team_name || 'Independent Innovator')
+        setFormTeamName(teamData.team_name || 'Independent Innovator')
+        setFormLeadName(teamData.lead_name || user.user_metadata?.full_name || 'Innovator')
         if (teamData.mentor_code) {
           setFormMentorCode(teamData.mentor_code)
         }
-      } else {
-        const { data: newTeam } = await supabase
-          .from('teams')
-          .insert([{
-            team_name: 'Independent Innovator',
-            lead_name: currentName,
-            members: [],
-            cohort_batch: 'National Science Fair Track',
-            mentor_code: ''
-          }])
-          .select()
-          .single()
 
-        if (newTeam) {
-          setTeamRecordId(newTeam.id)
+        // Cek profil aktif dari localStorage / sessionStorage (sinkron dengan pop-up dashboard)
+        const activeProfileId = sessionStorage.getItem(`active_profile_${user.id}`) || localStorage.getItem('active_member_id')
+        const activeProfileName = localStorage.getItem('active_profile_name')
+
+        if (activeProfileId) {
+          const { data: memberRecord } = await supabase
+            .from('team_members')
+            .select('*')
+            .eq('id', activeProfileId)
+            .maybeSingle()
+
+          if (memberRecord) {
+            setUserName(memberRecord.name)
+            // Tampilkan role dari database secara akurat (misal Developer / Researcher / Team Leader)
+            setUserRoleBadge(memberRecord.role || 'Team Member')
+          } else if (activeProfileName) {
+            setUserName(activeProfileName)
+            setUserRoleBadge(activeProfileName === teamData.lead_name ? 'Team Leader' : 'Team Member')
+          }
+        } else if (activeProfileName) {
+          setUserName(activeProfileName)
+          setUserRoleBadge(activeProfileName === teamData.lead_name ? 'Team Leader' : 'Team Member')
+        } else {
+          const leadName = teamData.lead_name || user.user_metadata?.full_name || 'Innovator'
+          setUserName(leadName)
+          setUserRoleBadge('Team Leader')
         }
+
+        // Fetch team members list from `team_members` table
+        const { data: membersList } = await supabase
+          .from('team_members')
+          .select('name')
+          .eq('team_id', teamData.id)
+
+        if (membersList) {
+          setTeamMembers(membersList.map(m => m.name))
+        }
+      } else {
+        const activeProfileName = localStorage.getItem('active_profile_name')
+        const defaultName = activeProfileName || user.user_metadata?.full_name || 'Innovator'
+        setUserName(defaultName)
+        setUserRoleBadge('Team Leader')
+        setTeamName('Independent Innovator')
       }
 
       fetchUnreadCount()
@@ -151,11 +162,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         (payload: TeamRealtimePayload) => {
           if (payload.new) {
             setTeamName((currentTeamName) => payload.new?.team_name ?? currentTeamName)
-            if (payload.new?.lead_name) {
-              setUserName(payload.new.lead_name)
-            }
-            setTeamMembers(payload.new.members || [])
-            if (payload.new.mentor_code !== undefined) {
+            if (payload.new?.mentor_code !== undefined) {
               setFormMentorCode(payload.new.mentor_code)
             }
           }
@@ -196,22 +203,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           mentor_code: formMentorCode
         })
         .eq('id', teamRecordId)
-    } else {
-      const { data: inserted } = await supabase
-        .from('teams')
-        .insert([{
-          team_name: formTeamName,
-          lead_name: formLeadName,
-          members: teamMembers,
-          cohort_batch: formTrack,
-          mentor_code: formMentorCode
-        }])
-        .select()
-        .single()
-
-      if (inserted) {
-        setTeamRecordId(inserted.id)
-      }
     }
 
     setIsSettingsOpen(false)
@@ -315,7 +306,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                   <i className={`fa-solid fa-chevron-down text-xs transition-transform ${isCompetitionOpen ? "rotate-180" : ""}`}></i>
                 </button>
 
-                {/* Sub-menu / Anakkan di Bawahnya */}
                 {isCompetitionOpen && (
                   <div className="ml-4 mt-1 pl-3 border-l border-slate-700/60 space-y-1">
                     <Link
@@ -360,7 +350,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           )}
         </nav>
 
-        {/* Bottom Section: Judge Profile or Team Info */}
+        {/* Bottom Section: Team Info & User Profile */}
         <div className={`mt-auto pt-4 border-t space-y-2.5 relative ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]'}`}>
           {isJudgeArea ? (
             <>
@@ -377,16 +367,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
               </div>
-
-              <div className={`rounded-xl border p-3 text-[11px] ${isDarkMode ? 'border-slate-700 bg-slate-800/60 text-slate-200' : 'border-[#d8c3ad] bg-[#fffaf6] text-[#534434]'}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold">Evaluation status</span>
-                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600">
-                    Active
-                  </span>
-                </div>
-                <div className="mt-2 text-[10px] uppercase tracking-[0.15em] text-amber-600">Final Judging</div>
-              </div>
             </>
           ) : (
             <>
@@ -394,7 +374,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 <div className={`absolute bottom-full left-0 right-0 mb-2 p-3 rounded-2xl border shadow-xl transition-all duration-300 transform translate-y-0 opacity-100 z-30 space-y-2 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/50' : 'bg-white border-[#d8c3ad] text-[#221a12] shadow-amber-900/10'}`}>
                   <div className="flex items-center justify-between text-[11px] font-bold border-b pb-1.5 border-inherit">
                     <span className="flex items-center gap-1.5">
-                      <i className="fa-solid fa-users text-amber-500"></i> Team Members (Managed by Mentor)
+                      <i className="fa-solid fa-users text-amber-500"></i> Team Roster
                     </span>
                     <span className="text-amber-500 text-[10px]">
                       {formMentorCode ? `Code: ${formMentorCode}` : 'No Mentor Code'}
@@ -409,7 +389,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                         </span>
                         <span className="font-semibold truncate">{userName}</span>
                       </div>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-bold">Lead</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500 font-bold">{userRoleBadge}</span>
                     </div>
 
                     {teamMembers.map((member, idx) => (
@@ -438,11 +418,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     <span className="w-6 h-6 rounded-full bg-[#F59E0B] text-slate-950 font-bold text-[9px] grid place-items-center border-2 border-white dark:border-slate-900">
                       {userName.substring(0, 2).toUpperCase()}
                     </span>
-                    {teamMembers.slice(0, 2).map((m, idx) => (
-                      <span key={idx} className="w-6 h-6 rounded-full bg-slate-700 text-slate-200 font-bold text-[9px] grid place-items-center border-2 border-white dark:border-slate-900">
-                        {m.substring(0, 2).toUpperCase()}
-                      </span>
-                    ))}
                   </div>
                   <div className="min-w-0 text-xs leading-tight">
                     <b className="block truncate text-[11px]">{teamName}</b>
@@ -463,13 +438,14 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 <i className="fa-solid fa-gear w-4 text-center text-amber-500"></i>Settings &amp; Mentor Code
               </button>
 
+              {/* Displaying Active Profile (Name & Role synced from modal/localStorage) */}
               <div className="flex items-center gap-3">
                 <span className="w-9 h-9 rounded-full bg-[#FEF3C7] text-[#855300] text-xs font-bold grid place-items-center shrink-0">
                   {userName.substring(0, 2).toUpperCase()}
                 </span>
                 <div className="text-sm leading-tight truncate">
                   <b className="truncate block">{userName}</b>
-                  <p className={`text-xs truncate ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{teamName} Lead</p>
+                  <p className={`text-[11px] truncate font-medium text-amber-600`}>{userRoleBadge}</p>
                 </div>
               </div>
             </>
@@ -528,7 +504,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Settings & Mentor Code Modal (Team members managed by mentor removed) */}
+      {/* Settings & Mentor Code Modal */}
       {isSettingsOpen && !isJudgeArea && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
@@ -585,10 +561,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                   <option value="Young Innovator Hub 2026">Young Innovator Hub 2026</option>
                   <option value="AI & Software Engineering Track">AI & Software Engineering Track</option>
                 </select>
-              </div>
-
-              <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[11px]">
-                <i className="fa-solid fa-circle-info mr-1"></i> Team roster and member assignments are managed directly by your assigned mentor via Team Management.
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-inherit">

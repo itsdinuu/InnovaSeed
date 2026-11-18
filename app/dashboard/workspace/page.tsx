@@ -19,7 +19,9 @@ type MemberTask = {
 }
 
 type TeamMember = {
+  id: string | number
   name: string
+  role: string
   avatarColor: string
 }
 
@@ -30,7 +32,7 @@ export default function ProjectWorkspacePage() {
   const [tasks, setTasks] = useState<MemberTask[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [currentUserName, setCurrentUserName] = useState('Bima')
+  const [currentUserName, setCurrentUserName] = useState('Desti Andhini')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   
   // State Proyek Utama
@@ -50,10 +52,10 @@ export default function ProjectWorkspacePage() {
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<TaskStatus>('Backlog')
   const [priority, setPriority] = useState('Medium')
-  const [assignee, setAssignee] = useState('Bima')
+  const [assignee, setAssignee] = useState('Desti Andhini')
   const [submittingMentor, setSubmittingMentor] = useState(false)
 
-  // --- FETCH DATA WORKSPACE DENGAN MULTI-FALLBACK ---
+  // --- FETCH DATA WORKSPACE DENGAN FLEKSIBILITAS IDEA BANK ---
   const fetchWorkspaceData = useCallback(async () => {
     setLoading(true)
 
@@ -62,11 +64,14 @@ export default function ProjectWorkspacePage() {
       const userId = session.user.id
       setCurrentUserId(userId)
       
-      const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Bima'
-      setCurrentUserName(name)
-      setAssignee(name)
+      const activeProfileName = localStorage.getItem('active_profile_name')
+      const authDefaultName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Desti Andhini'
+      const finalUserName = activeProfileName || authDefaultName
+      
+      setCurrentUserName(finalUserName)
+      setAssignee(finalUserName)
 
-      // 1. Cek Tim User Terlebih Dahulu
+      // 1. Cek Tim User Berdasarkan Auth
       const { data: memberData } = await supabase
         .from('team_members')
         .select('team_id, teams(name)')
@@ -76,7 +81,27 @@ export default function ProjectWorkspacePage() {
       const currentTeamId = memberData?.team_id || null
       let foundProject = false
 
-      // 2. Coba ambil dari tabel `projects`
+      // 2. Ambil Anggota Tim Terlebih Dahulu untuk Setup List Team Members
+      let mappedMembers: TeamMember[] = [{ id: userId, name: finalUserName, role: 'leader', avatarColor: 'bg-amber-500 text-slate-950' }]
+      
+      if (currentTeamId) {
+        const { data: allTeamUsers } = await supabase
+          .from('team_members')
+          .select('id, name, role')
+          .eq('team_id', currentTeamId)
+
+        if (allTeamUsers && allTeamUsers.length > 0) {
+          const colors = ['bg-amber-500 text-slate-950', 'bg-emerald-500 text-slate-950', 'bg-blue-500 text-slate-950', 'bg-purple-500 text-slate-950']
+          mappedMembers = allTeamUsers.map((m: { id: string | number; name: string; role: string }, idx: number) => ({
+            id: m.id,
+            name: m.name,
+            role: m.role,
+            avatarColor: colors[idx % colors.length]
+          }))
+        }
+      }
+
+      // 3. CARI PROYEK DARI TABEL `projects`
       const { data: projectData, error: projError } = await supabase
         .from('projects')
         .select('*')
@@ -93,31 +118,31 @@ export default function ProjectWorkspacePage() {
           progressPercentage: proj.progress_percentage || 0,
           approvalStatus: proj.approval_status || 'in_progress',
           teamName: memberData?.teams ? (memberData.teams as { name?: string }).name || 'Assigned Team' : 'Solo Project',
-          teamMembers: [{ name: name, avatarColor: 'bg-amber-500 text-slate-950' }]
+          teamMembers: mappedMembers
         })
         foundProject = true
       }
 
-      // 3. FALLBACK: Ambil langsung dari tabel `ideas` jika berstatus Prototype / Approved
+      // 4. FALLBACK: AMBIL IDE TERBARU DARI TABEL `ideas` (Idea Bank)
       if (!foundProject) {
-        const { data: userIdeas } = await supabase
+        const { data: userIdeas, error: ideaErr } = await supabase
           .from('ideas')
           .select('*')
-          .in('status', ['Prototype', 'Approved'])
+          .in('status', ['Prototype', 'prototype', 'Approved', 'approved', 'Promoted', 'promoted'])
           .order('id', { ascending: false })
           .limit(1)
 
-        if (userIdeas && userIdeas.length > 0) {
+        if (!ideaErr && userIdeas && userIdeas.length > 0) {
           const idea = userIdeas[0]
           setActiveProject({
             id: idea.id,
             title: idea.title || '',
-            subtitle: idea.problem_statement || idea.description || 'Promoted Innovation Prototype',
+            subtitle: idea.problem_statement || idea.description || 'Promoted Innovation Prototype from Idea Bank',
             sprintName: 'Sprint Active',
             progressPercentage: 0,
             approvalStatus: 'in_progress',
-            teamName: 'Solo Project',
-            teamMembers: [{ name: name, avatarColor: 'bg-amber-500 text-slate-950' }]
+            teamName: memberData?.teams ? (memberData.teams as { name?: string }).name || 'Solo Project' : 'Solo Project',
+            teamMembers: mappedMembers
           })
           foundProject = true
         }
@@ -131,34 +156,9 @@ export default function ProjectWorkspacePage() {
           sprintName: 'Sprint Active',
           progressPercentage: 0,
           approvalStatus: 'in_progress',
-          teamName: 'Solo Project',
-          teamMembers: [{ name: name, avatarColor: 'bg-amber-500 text-slate-950' }]
+          teamName: memberData?.teams ? (memberData.teams as { name?: string }).name || 'Solo Project' : 'Solo Project',
+          teamMembers: mappedMembers
         })
-      }
-
-      // 4. Ambil Anggota Tim Jika Ada
-      if (currentTeamId) {
-        const { data: allTeamUsers } = await supabase
-          .from('team_members')
-          .select('profiles(full_name, email)')
-          .eq('team_id', currentTeamId)
-
-        if (allTeamUsers && allTeamUsers.length > 0) {
-          const colors = ['bg-amber-500 text-slate-950', 'bg-emerald-500 text-slate-950', 'bg-blue-500 text-slate-950', 'bg-purple-500 text-slate-950']
-          const mappedMembers: TeamMember[] = allTeamUsers.map((u: Record<string, unknown>, idx: number) => {
-            const profile = u.profiles as { full_name?: string; email?: string } | null
-            const memberName = profile?.full_name || profile?.email?.split('@')[0] || 'Member'
-            return {
-              name: memberName,
-              avatarColor: colors[idx % colors.length]
-            }
-          })
-
-          setActiveProject(prev => ({
-            ...prev,
-            teamMembers: mappedMembers
-          }))
-        }
       }
 
       // 5. Ambil Task Kanban
@@ -302,9 +302,9 @@ export default function ProjectWorkspacePage() {
             <div className="w-12 h-12 mx-auto rounded-full bg-amber-500/10 text-amber-500 grid place-items-center text-lg border border-amber-500/30">
               <i className="fa-solid fa-lightbulb"></i>
             </div>
-            <h2 className="text-xl font-bold">No Project Workspace Active</h2>
+            <h2 className="text-xl font-bold">No Promoted Idea Found</h2>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              You haven&apos;t added any project or promoted an idea yet. Go to Idea Bank to start.
+              You haven&apos;t promoted any idea from the Idea Bank yet. Go to Idea Bank to pick an innovation concept.
             </p>
             <div className="pt-2">
               <Link href="/dashboard/idea-bank" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-600 transition shadow-sm inline-flex items-center gap-2">
@@ -319,11 +319,11 @@ export default function ProjectWorkspacePage() {
               <div>
                 <div className="flex flex-wrap items-center gap-2 mb-2">
                   <span className="inline-block rounded-md px-2.5 py-1 text-[11px] font-semibold bg-amber-500/10 border border-amber-500/30 text-amber-600">
-                    <i className="fa-solid fa-users mr-1.5"></i> {activeProject.teamName}
+                    <i className="fa-solid fa-users mr-1.5"></i> {activeProject.teamName} (Owner: {currentUserName})
                   </span>
                   {activeProject.approvalStatus === 'approved' && (
                     <span className="inline-block rounded-md px-2.5 py-1 text-[11px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-500">
-                      <i className="fa-solid fa-circle-check mr-1"></i> Approved &amp; Portfolio Unlocked 🏆
+                      <i className="fa-solid fa-circle-check mr-1"></i> Approved &amp; Portfolio Unlocked
                     </span>
                   )}
                   {activeProject.approvalStatus === 'pending_review' && (
@@ -349,7 +349,7 @@ export default function ProjectWorkspacePage() {
                     {activeProject.teamMembers.map((member, idx) => (
                     <div 
                       key={idx}
-                      title={member.name}
+                      title={`${member.name} (${member.role})`}
                       className={`inline-flex w-8 h-8 rounded-full ring-2 ${isDarkMode ? 'ring-slate-900' : 'ring-white'} ${member.avatarColor} font-bold text-xs items-center justify-center shadow-xs cursor-pointer`}
                     >
                       {member.name.charAt(0)}
@@ -374,7 +374,7 @@ export default function ProjectWorkspacePage() {
       <div>
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h2 className="font-bold text-sm tracking-tight">Team Execution Milestones &amp; Sub-tasks 📋</h2>
+            <h2 className="font-bold text-sm tracking-tight">Team Execution Milestones &amp; Sub-tasks</h2>
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
               Collaborate with your team members and move all tasks to Completed before requesting mentor validation.
             </p>
@@ -503,7 +503,7 @@ export default function ProjectWorkspacePage() {
           <div className="w-10 h-10 mx-auto rounded-full bg-amber-500/20 text-amber-500 grid place-items-center text-lg">
             <i className="fa-solid fa-flag-checkered"></i>
           </div>
-          <h3 className="font-extrabold text-base">All Team Milestones Completed! 🎉</h3>
+          <h3 className="font-extrabold text-base">All Team Milestones Completed!</h3>
           <p className={`text-xs max-w-lg mx-auto ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
             Your team has finished all sub-tasks. Submit your project to the mentor for validation to unlock team portfolios.
           </p>
@@ -512,7 +512,7 @@ export default function ProjectWorkspacePage() {
             disabled={submittingMentor}
             className="px-6 py-3 rounded-xl bg-[#F59E0B] text-[#0F172A] font-extrabold text-xs hover:bg-[#D97706] transition shadow-sm cursor-pointer disabled:opacity-50"
           >
-            {submittingMentor ? 'Submitting...' : '🚀 Send Project to Mentor for Validation'}
+            {submittingMentor ? 'Submitting...' : 'Send Project to Mentor for Validation'}
           </button>
         </div>
       )}
@@ -522,7 +522,7 @@ export default function ProjectWorkspacePage() {
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className={`rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
             <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-              <h3 className="font-bold text-lg">Add Team Milestone / Task 📝</h3>
+              <h3 className="font-bold text-lg">Add Team Milestone / Task</h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <i className="fa-solid fa-xmark text-lg"></i>
               </button>
