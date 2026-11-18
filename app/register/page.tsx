@@ -23,12 +23,6 @@ export default function RegisterPage() {
   const [errorMessage, setErrorMessage] = useState('')
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-  const steps = [
-    ['Create your team account', 'Register with your institutional email.'],
-    ['Verify with your faculty mentor', 'Mentors confirm your team and research ethics.'],
-    ['Start logging trials', 'Unlock your workspace and prep for judging.']
-  ]
-
   const showCustomToast = (msg: string) => {
     setToastMessage(msg)
     setTimeout(() => {
@@ -128,98 +122,42 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="font-sans text-slate-900 bg-white min-h-screen grid lg:grid-cols-[0.8fr_1.2fr]">
-      {/* Left Side: Banner / Branding */}
-      <aside className="hidden lg:flex flex-col justify-between p-10 text-white bg-linear-to-b from-stone-950 via-stone-900 to-amber-950">
-        <div>
-          <div className="flex items-center gap-3">
+    <div className="font-sans text-slate-900 bg-[#fffdfa] min-h-screen flex items-center justify-center p-6">
+      <main className="w-full max-w-xl bg-white rounded-3xl border border-[#ebdcd0] shadow-xl p-8 sm:p-10">
+        
+        {/* Header Logo & Title */}
+        <div className="flex flex-col items-center text-center">
+          <div className="flex items-center gap-3 mb-3">
             <Image
               src="/InnovaSeed-Logo.png"
               alt="InnovaSeed Logo"
-              width={40}
-              height={40}
-              className="rounded-xl object-cover shadow-sm border border-amber-500/30 bg-amber-500/10"
+              width={45}
+              height={45}
+              className="rounded-2xl object-cover shadow-md border border-amber-500/30 bg-amber-500/10"
+              priority
             />
-            <div>
-              <b>InnovaSeed <span className="text-[10px] border border-white/30 rounded px-1.5 py-0.5 ml-1">v2.0</span></b>
-              <p className="text-xs text-slate-400">A Plego Indonesia Product</p>
+            <div className="text-left">
+              <div className="flex items-center gap-1.5">
+                <b className="text-base font-extrabold text-slate-900">InnovaSeed</b>
+                <span className="text-[10px] border border-amber-500/30 bg-amber-50 text-amber-700 rounded px-1.5 py-0.2 font-semibold">v2.0</span>
+              </div>
+              <p className="text-xs text-slate-500">A Plego Indonesia Product</p>
             </div>
           </div>
 
-          <span className="inline-block rounded-md px-3 py-1.5 text-[11px] font-semibold bg-white/10 border border-amber-500/40 text-amber-300 mt-14">
-            <i className="fa-solid fa-circle-check mr-1.5"></i> Registration Open · PLEGO 2026 Cohort
-          </span>
-
-          <h2 className="text-4xl font-extrabold leading-tight mt-6">
-            Plant your idea. Grow it into a global innovation.
-          </h2>
-          <p className="text-slate-400 mt-5 text-sm">
-            Register your innovation team in minutes and get a synchronized lab notebook, faculty mentorship and a direct path to national qualifiers.
-          </p>
-
-          <ol className="mt-8 space-y-4">
-            {steps.map(([t, d], i) => (
-              <li key={i} className="flex gap-3 items-center">
-                <span className={`w-8 h-8 rounded-full grid place-items-center text-xs font-bold ${i === 0 ? 'bg-amber-500 text-slate-950' : 'border border-white/30 text-white'}`}>
-                  {i + 1}
-                </span>
-                <div className="text-sm">
-                  <b>{t}</b>
-                  <p className="text-xs text-slate-400">{d}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
+          <h1 className="text-2xl font-extrabold text-slate-900 mt-2">Register Innovation Team</h1>
+          <p className="text-slate-500 text-xs mt-1">Create a team account to join the InnovaSeed cohort and access your research workspace.</p>
         </div>
 
-        <div>
-          <div className="rounded-xl bg-white/5 border border-white/10 p-4 flex items-center gap-3 text-xs">
-            <span className="flex -space-x-2">
-              <span className="w-8 h-8 rounded-full bg-slate-400 ring-2 ring-stone-900"></span>
-              <span className="w-8 h-8 rounded-full bg-amber-300 ring-2 ring-stone-900"></span>
-              <span className="w-8 h-8 rounded-full bg-slate-500 ring-2 ring-stone-900"></span>
-            </span>
-            <div>
-              <b className="text-sm">12,000+ Young Innovators</b>
-              <p className="text-slate-400 text-[11px]">84 partner universities &amp; labs</p>
-            </div>
-            <span className="ml-auto bg-amber-500 text-slate-950 font-bold rounded px-2 py-1">99.8% Uptime</span>
+        {errorMessage && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-xs p-3 rounded-xl mt-4">
+            {errorMessage}
           </div>
-          <div className="flex justify-between text-xs text-slate-500 mt-6 pt-4 border-t border-white/10">
-            <span><i className="fa-solid fa-lock mr-1"></i> ISO 17025 Research Log</span>
-            <span>© 2026 Plego Indonesia</span>
-          </div>
-        </div>
-      </aside>
+        )}
 
-      {/* Right Side: Registration Form */}
-      <main className="flex flex-col justify-center px-6 sm:px-12 xl:px-20 py-10">
-        <form onSubmit={handleRegister} className="w-full max-w-129 mx-auto">
-          <div className="flex justify-between text-[11px] tracking-wider font-semibold text-slate-600">
-            <span className="inline-flex items-center gap-2">
-              <Image
-                src="/InnovaSeed-Logo.png"
-                alt="InnovaSeed Logo"
-                width={40}
-                height={40}
-                className="rounded-xl object-cover shadow-sm border border-amber-500/30 bg-amber-500/10"
-                priority
-              />
-              TEAM REGISTRATION 
-            </span>
-            <Link href="#" className="font-normal text-slate-500 tracking-normal hover:underline"><i className="fa-regular fa-circle-question mr-1"></i> Helpdesk &amp; FAQ</Link>
-          </div>
-
-          <h1 className="text-3xl font-bold mt-5">Register your Innovation Team</h1>
-          <p className="text-slate-500 mt-2 text-sm">Create a team account to join the InnovaSeed 2026 cohort and access your research workspace.</p>
-
-          {errorMessage && (
-            <div className="bg-red-50 border border-red-200 text-red-600 text-xs p-3 rounded-lg mt-4">
-              {errorMessage}
-            </div>
-          )}
-
-          <div className="grid sm:grid-cols-2 gap-4 mt-6">
+        {/* Registration Form */}
+        <form onSubmit={handleRegister} className="space-y-4 mt-6">
+          <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">Team Name</label>
               <div className="relative">
@@ -228,8 +166,8 @@ export default function RegisterPage() {
                   required
                   value={formData.teamName}
                   onChange={(e) => setFormData({...formData, teamName: e.target.value})}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="e.g., Bio-Spark Team"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  placeholder="e.g., New Era Team"
                 />
               </div>
             </div>
@@ -242,17 +180,14 @@ export default function RegisterPage() {
                   required
                   value={formData.leadName}
                   onChange={(e) => setFormData({...formData, leadName: e.target.value})}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="Your full name"
                 />
               </div>
             </div>
 
             <div className="sm:col-span-2">
-              <div className="flex justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700">Institutional Email</label>
-                <span className="text-[11px] text-slate-400">e.g., student.lead@innovaseed.sch.id</span>
-              </div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Institutional Email</label>
               <div className="relative">
                 <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
@@ -260,7 +195,7 @@ export default function RegisterPage() {
                   required
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="student.lead@innovaseed.sch.id"
                 />
               </div>
@@ -274,8 +209,8 @@ export default function RegisterPage() {
                   required
                   value={formData.institution}
                   onChange={(e) => setFormData({...formData, institution: e.target.value})}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="e.g., Plego National High School"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  placeholder="e.g., Plego Universe School"
                 />
               </div>
             </div>
@@ -285,7 +220,7 @@ export default function RegisterPage() {
               <select
                 value={formData.researchField}
                 onChange={(e) => setFormData({...formData, researchField: e.target.value})}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
               >
                 <option>Biotechnology &amp; Health</option>
                 <option>Environmental Engineering</option>
@@ -299,7 +234,7 @@ export default function RegisterPage() {
               <select
                 value={formData.teamSize}
                 onChange={(e) => setFormData({...formData, teamSize: e.target.value})}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
               >
                 <option>1 member</option>
                 <option>2 members</option>
@@ -319,7 +254,7 @@ export default function RegisterPage() {
                   minLength={10}
                   value={formData.password}
                   onChange={(e) => setFormData({...formData, password: e.target.value})}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-10 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-10 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="Min. 10 characters"
                 />
                 <button
@@ -341,44 +276,40 @@ export default function RegisterPage() {
                   required
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="Repeat password"
                 />
               </div>
             </div>
           </div>
 
-          <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 mt-5 text-xs">
+          <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 mt-4 text-xs">
             <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
             <div>
-              <b className="text-sm text-slate-800">Mentor verification required</b>
-              <p className="text-slate-600 mt-0.5">After registering, your faculty mentor will receive an email to verify your team within 48 hours.</p>
+              <b className="font-semibold text-slate-800">Mentor verification required</b>
+              <p className="text-slate-600 mt-0.5 text-[11px]">Faculty mentor approval is required after registration.</p>
             </div>
           </div>
 
-          <label className="flex gap-2 items-center text-xs text-slate-600 mt-4">
-            <input type="checkbox" defaultChecked required className="accent-amber-500" />
-            I agree to the <Link href="#" className="font-semibold underline text-slate-900">Terms of Use</Link> and <Link href="#" className="font-semibold underline text-slate-900">Research Data Protection Policy</Link> (ISO/IEC 17025).
+          <label className="flex gap-2 items-center text-xs text-slate-600 mt-4 cursor-pointer">
+            <input type="checkbox" defaultChecked required className="accent-amber-500 w-4 h-4 cursor-pointer" />
+            <span>I agree to the <Link href="#" className="font-semibold underline text-slate-900">Terms of Use</Link> and <Link href="#" className="font-semibold underline text-slate-900">Data Policy</Link>.</span>
           </label>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3.5 text-sm font-semibold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 mt-4 cursor-pointer shadow-md"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-xs font-bold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 mt-4 cursor-pointer shadow-md"
           >
             {loading ? 'Creating Account...' : 'Create Team Account →'}
           </button>
-
-          <p className="text-center text-xs text-slate-500 mt-5">
-            Already have an InnovaSeed account?<br />
-            <Link href="/login" className="font-semibold text-amber-700 hover:underline">Sign in</Link>
-          </p>
-
-          <p className="text-center text-[11px] text-slate-400 mt-4">
-            Protected by Plego Indonesia 256-bit ISO/IEC data protection layer. Need help?<br />
-            <Link href="#" className="underline text-sm text-slate-900 font-medium">Contact Accelerator Registrar</Link>
-          </p>
         </form>
+
+        <div className="text-center mt-6 pt-4 border-t border-slate-100 text-xs">
+          <span className="text-slate-500">Already have an InnovaSeed account? </span>
+          <Link href="/login" className="font-bold text-amber-700 hover:underline">Sign in</Link>
+        </div>
+
       </main>
 
       {toastMessage && (

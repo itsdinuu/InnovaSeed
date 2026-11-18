@@ -1,9 +1,11 @@
 "use client"
 
 import Image from 'next/image'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef, useId } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
+import { useOutsideClick } from '@/hooks/use-outside-click'
 
 type Idea = {
   id: number
@@ -32,11 +34,12 @@ export default function IdeaBankPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<'student' | 'mentor'>('student')
-
-  // State untuk melacak apakah user sudah punya proyek aktif
   const [hasActiveProject, setHasActiveProject] = useState(false)
 
-  const [selectedIdeaDetail, setSelectedIdeaDetail] = useState<Idea | null>(null)
+  // State untuk Expandable Card Framer Motion
+  const [activeCard, setActiveCard] = useState<Idea | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const id = useId()
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -61,7 +64,6 @@ export default function IdeaBankPage() {
       setCurrentUserRole('student')
     }
 
-    // CEK KETAT: Apakah user sudah memiliki proyek aktif (di tabel projects atau ide berstatus Prototype)
     if (userId) {
       const { data: existingProjects } = await supabase
         .from('projects')
@@ -123,6 +125,25 @@ export default function IdeaBankPage() {
     }
   }, [fetchIdeas])
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setActiveCard(null)
+      }
+    }
+
+    if (activeCard) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = "auto"
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [activeCard])
+
+  useOutsideClick(ref, () => setActiveCard(null))
+
   function showToast(message: string) {
     setToastMessage(message)
     setTimeout(() => {
@@ -145,6 +166,7 @@ export default function IdeaBankPage() {
   }
 
   function handleOpenEditModal(item: Idea) {
+    setActiveCard(null)
     setEditingId(item.id)
     setTitle(item.title || '')
     setDescription(item.description || '')
@@ -220,8 +242,9 @@ export default function IdeaBankPage() {
     }
   }
 
-  function handleDeleteIdea(id: number) {
-    setDeleteConfirmId(id)
+  function handleDeleteIdea(idNumber: number) {
+    setActiveCard(null)
+    setDeleteConfirmId(idNumber)
   }
 
   async function executeDelete() {
@@ -241,7 +264,6 @@ export default function IdeaBankPage() {
     }
   }
 
-  // VALIDASI MUTLAK: TOLAK JIKA SUDAH ADA PROYEK AKTIF
   async function handlePromoteIdea(item: Idea) {
     if (hasActiveProject && currentUserRole === 'student') {
       showToast('⚠️ You already have an active project! Finish and get mentor approval before promoting a new one.')
@@ -290,6 +312,7 @@ export default function IdeaBankPage() {
       .eq('id', item.id)
 
     setHasActiveProject(true)
+    setActiveCard(null)
     showToast(`Successfully promoted "${item.title}" to Project Workspace! 🚀`)
     fetchIdeas()
   }
@@ -309,6 +332,139 @@ export default function IdeaBankPage() {
 
   return (
     <div className="space-y-6 relative">
+      {/* EXPANDABLE CARD OVERLAY BACKGROUND */}
+      <AnimatePresence>
+        {activeCard && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs h-full w-full z-40"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* EXPANDABLE CARD MODAL EXPANDED */}
+      <AnimatePresence>
+        {activeCard && (
+          <div className="fixed inset-0 grid place-items-center z-50 p-4 pointer-events-none">
+            <motion.div
+              layoutId={`card-${activeCard.id}-${id}`}
+              ref={ref}
+              className={`w-full max-w-xl h-full md:h-fit md:max-h-[90vh] flex flex-col rounded-3xl overflow-hidden shadow-2xl border overflow-y-auto pointer-events-auto ${
+                isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'
+              }`}
+            >
+              <div className="flex items-center justify-between px-6 pt-6 pb-2">
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                  {activeCard.status}
+                </span>
+                <button
+                  className="flex items-center justify-center bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-full h-8 w-8 shadow-xs cursor-pointer hover:bg-slate-300 transition"
+                  onClick={() => setActiveCard(null)}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {activeCard.sketch_image_url && (
+                <div className="px-6 pb-0">
+                  <div className="relative w-full h-60 sm:h-72 rounded-2xl overflow-hidden border border-slate-700/30">
+                    <Image
+                      src={activeCard.sketch_image_url}
+                      alt={activeCard.title || 'Idea Sketch'}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="p-6 space-y-4">
+                <div className="flex justify-between items-start gap-4">
+                  <motion.h3
+                    layoutId={`title-${activeCard.id}-${id}`}
+                    className="font-extrabold text-xl"
+                  >
+                    {activeCard.title}
+                  </motion.h3>
+
+                  {activeCard.status === 'Approved' && (
+                    <button
+                      onClick={() => handlePromoteIdea(activeCard)}
+                      disabled={hasActiveProject && currentUserRole === 'student'}
+                      className={`px-4 py-2 text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 shrink-0 ${
+                        hasActiveProject && currentUserRole === 'student'
+                          ? 'bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600'
+                          : 'bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] cursor-pointer'
+                      }`}
+                    >
+                      <i className="fa-solid fa-rocket"></i> {hasActiveProject && currentUserRole === 'student' ? 'Locked' : 'Promote'}
+                    </button>
+                  )}
+                </div>
+
+                <motion.p
+                  layoutId={`description-${activeCard.id}-${id}`}
+                  className={`text-xs sm:text-sm leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}
+                >
+                  {activeCard.description}
+                </motion.p>
+
+                <div className="space-y-3 pt-2 text-xs">
+                  <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                    <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                      <i className="fa-solid fa-circle-exclamation"></i> 1. The Problem Statement
+                    </h4>
+                    <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                      {activeCard.problem_statement || activeCard.description || "Everyday challenge or inefficiency encountered by students."}
+                    </p>
+                  </div>
+
+                  <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                    <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                      <i className="fa-solid fa-gears"></i> 2. How It Works (Solution)
+                    </h4>
+                    <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                      {activeCard.how_it_works || "A concise explanation of how the mechanism operates."}
+                    </p>
+                  </div>
+
+                  <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                    <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                      <i className="fa-solid fa-toolbox"></i> 3. Materials Needed
+                    </h4>
+                    <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
+                      {activeCard.materials_needed || "List of accessible tools or components."}
+                    </p>
+                  </div>
+
+                  <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
+                    <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
+                      <i className="fa-solid fa-list-check"></i> 4. Step-by-Step Build Guide
+                    </h4>
+                    <p className={`whitespace-pre-line ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>
+                      {activeCard.step_by_step_guide || "1. Draft initial sketches.\n2. Build core prototype."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    onClick={() => setActiveCard(null)}
+                    className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-200"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Warning banner active project */}
       {hasActiveProject && currentUserRole === 'student' && (
         <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-3">
@@ -394,7 +550,7 @@ export default function IdeaBankPage() {
       {loading ? (
         <div className="text-center py-16 text-slate-500 animate-pulse text-sm">Loading ideas from database...</div>
       ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <ul className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 w-full">
           <div 
             onClick={handleOpenCreateModal}
             className={`border-2 border-dashed rounded-2xl p-6 text-center flex flex-col items-center justify-center cursor-pointer transition space-y-3 group min-h-60 ${isDarkMode ? 'border-amber-500/40 bg-slate-900/50 hover:bg-slate-900' : 'border-amber-300 bg-amber-50/40 hover:bg-amber-50/80'}`}
@@ -417,18 +573,24 @@ export default function IdeaBankPage() {
             const isUserCreated = item.author_name !== 'InnovaSeed';
 
             return (
-              <div key={item.id} className={`border rounded-2xl p-6 shadow-xs space-y-4 relative group flex flex-col justify-between transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
+              <motion.div
+                layoutId={`card-${item.id}-${id}`}
+                key={`card-${item.id}-${id}`}
+                className={`border rounded-2xl p-6 shadow-xs space-y-4 relative group flex flex-col justify-between transition-colors ${
+                  isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100 hover:border-amber-500/50' : 'bg-white border-[#d8c3ad] hover:border-amber-500/50'
+                }`}
+              >
                 {isUserCreated && (
-                  <div className="absolute top-5 right-5 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition">
+                  <div className="absolute top-5 right-5 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition z-10">
                     <button 
-                      onClick={() => handleOpenEditModal(item)}
+                      onClick={(e) => { e.stopPropagation(); handleOpenEditModal(item); }}
                       title="Edit Idea"
                       className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs transition cursor-pointer ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-amber-500/20 hover:text-amber-400' : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-600'}`}
                     >
                       <i className="fa-solid fa-pen"></i>
                     </button>
                     <button 
-                      onClick={() => handleDeleteIdea(item.id)}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteIdea(item.id); }}
                       title="Delete Idea"
                       className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs transition cursor-pointer ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-rose-500/20 hover:text-rose-400' : 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600'}`}
                     >
@@ -450,8 +612,12 @@ export default function IdeaBankPage() {
                   </div>
 
                   <div>
-                    <h3 className="font-bold text-base">{item.title}</h3>
-                    <p className={`text-xs mt-1 leading-relaxed line-clamp-3 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>{item.description}</p>
+                    <motion.h3 layoutId={`title-${item.id}-${id}`} className="font-bold text-base">
+                      {item.title}
+                    </motion.h3>
+                    <motion.p layoutId={`description-${item.id}-${id}`} className={`text-xs mt-1 leading-relaxed line-clamp-3 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+                      {item.description}
+                    </motion.p>
                   </div>
 
                   {item.sketch_image_url && (
@@ -481,22 +647,21 @@ export default function IdeaBankPage() {
 
                   <div className="flex items-center gap-2 pt-2">
                     <button 
-                      onClick={() => setSelectedIdeaDetail(item)}
-                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer flex items-center justify-center gap-1.5 ${isDarkMode ? 'border-slate-700 hover:bg-slate-800 text-slate-200' : 'border-[#d8c3ad] hover:bg-[#fff1e5] text-[#534434]'}`}
+                      onClick={() => setActiveCard(item)}
+                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${isDarkMode ? 'border-slate-700 bg-slate-800/40 text-slate-200 hover:bg-slate-800' : 'border-[#d8c3ad] bg-[#fff8f4] text-[#534434] hover:bg-amber-100/50'}`}
                     >
-                      <i className="fa-solid fa-circle-info text-amber-500"></i> Detail &amp; Guide
+                      <i className="fa-solid fa-circle-info text-amber-500"></i> Detail & Guide
                     </button>
 
                     {item.status === 'Approved' && (
                       <button 
-                        onClick={() => handlePromoteIdea(item)}
+                        onClick={(e) => { e.stopPropagation(); handlePromoteIdea(item); }}
                         disabled={hasActiveProject && currentUserRole === 'student'}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 ${
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 z-10 ${
                           hasActiveProject && currentUserRole === 'student'
                             ? 'bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600'
                             : 'bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] cursor-pointer'
                         }`}
-                        title={hasActiveProject && currentUserRole === 'student' ? 'Finish active project first' : 'Promote to Project Workspace'}
                       >
                         <i className="fa-solid fa-rocket"></i> {hasActiveProject && currentUserRole === 'student' ? 'Locked' : 'Promote'}
                       </button>
@@ -512,109 +677,10 @@ export default function IdeaBankPage() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
-      )}
-
-      {/* Modal Detail & Guide */}
-      {selectedIdeaDetail && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className={`rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-5 border max-h-[90vh] overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
-            <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-              <div>
-                <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                  {selectedIdeaDetail.status}
-                </span>
-                <h3 className="font-bold text-lg mt-1">{selectedIdeaDetail.title}</h3>
-              </div>
-              <button onClick={() => setSelectedIdeaDetail(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <i className="fa-solid fa-xmark text-xl"></i>
-              </button>
-            </div>
-
-            {selectedIdeaDetail.sketch_image_url && (
-              <div className="relative h-48 rounded-xl overflow-hidden border border-slate-700/50">
-                <Image
-                  src={selectedIdeaDetail.sketch_image_url}
-                  alt="Project Sketch"
-                  fill
-                  sizes="(max-width: 768px) 100vw, 50vw"
-                  className="object-cover"
-                  unoptimized
-                />
-              </div>
-            )}
-
-            <div className="space-y-3.5 text-xs">
-              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
-                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
-                  <i className="fa-solid fa-circle-exclamation"></i> 1. The Problem (What issue are we solving?)
-                </h4>
-                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
-                  {selectedIdeaDetail.problem_statement || selectedIdeaDetail.description || "Everyday challenge or inefficiency encountered by students that requires an innovative prototype solution."}
-                </p>
-              </div>
-
-              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
-                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
-                  <i className="fa-solid fa-gears"></i> 2. How It Works (The Solution)
-                </h4>
-                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
-                  {selectedIdeaDetail.how_it_works || "A concise explanation of how the mechanism or software logic operates to solve the defined problem simply."}
-                </p>
-              </div>
-
-              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
-                <h4 className="font-bold text-amber-500 mb-1 flex items-center gap-2">
-                  <i className="fa-solid fa-toolbox"></i> 3. Materials Needed (Mini Toolkit)
-                </h4>
-                <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
-                  {selectedIdeaDetail.materials_needed || "List of accessible tools or components (e.g., used cardboard, tape, sensors, micro:bit, or Scratch/Figma account)."}
-                </p>
-              </div>
-
-              <div className={`p-3.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}>
-                <h4 className="font-bold text-amber-500 mb-1.5 flex items-center gap-2">
-                  <i className="fa-solid fa-list-check"></i> 4. Step-by-Step Build Guide
-                </h4>
-                <p className={`whitespace-pre-line ${isDarkMode ? 'text-slate-300' : 'text-[#534434]'}`}>
-                  {selectedIdeaDetail.step_by_step_guide || "1. Draft initial sketches or wireframe layouts.\n2. Gather required physical or digital toolkits.\n3. Build the core functional prototype.\n4. Test performance and refine for presentation."}
-                </p>
-              </div>
-            </div>
-
-            <div className={`flex items-center justify-between pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-[#d8c3ad]/40'}`}>
-              <button 
-                type="button" 
-                onClick={() => setSelectedIdeaDetail(null)}
-                className="px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition text-slate-500 hover:bg-slate-100"
-              >
-                Close
-              </button>
-
-              {selectedIdeaDetail.status === 'Approved' && (
-                <button 
-                  type="button" 
-                  disabled={hasActiveProject && currentUserRole === 'student'}
-                  onClick={() => {
-                    const targetItem = selectedIdeaDetail;
-                    setSelectedIdeaDetail(null);
-                    handlePromoteIdea(targetItem);
-                  }}
-                  className={`px-5 py-2 text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 ${
-                    hasActiveProject && currentUserRole === 'student'
-                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600'
-                      : 'bg-[#F59E0B] text-[#0F172A] hover:bg-[#D97706] cursor-pointer'
-                  }`}
-                >
-                  <i className="fa-solid fa-rocket"></i> {hasActiveProject && currentUserRole === 'student' ? 'Project Active (Locked)' : 'Promote to Project Workspace'}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        </ul>
       )}
 
       {/* Modal Create & Edit */}
