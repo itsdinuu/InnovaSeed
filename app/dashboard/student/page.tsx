@@ -526,7 +526,7 @@ export default function StudentDashboardPage() {
                 <label className="block text-slate-400 mb-1">Brief Experimental Note</label>
                 <textarea 
                   value={experimentalNote}
-                  onChange={(e) => experimentalNote}
+                  onChange={() => experimentalNote}
                   placeholder="Record resonance observations or acoustic tuning..." 
                   rows={2}
                   className={`w-full px-3 py-2 rounded-xl outline-none border resize-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -12,41 +12,59 @@ type StudentIdea = {
   tags?: string[] | string | null
   feasibility_score?: number | string | null
   author_name?: string
+  team_id?: number
 }
 
 export default function StudentSubmissionsPage() {
   const { isDarkMode } = useTheme()
   const [submissions, setSubmissions] = useState<StudentIdea[]>([])
   const [loading, setLoading] = useState(true)
+  const [toast, setToast] = useState<string | null>(null)
 
-  useEffect(() => {
-    let isCancelled = false
+  const loadSubmissions = useCallback(async () => {
+    setLoading(true)
 
-    const loadSubmissions = async () => {
-      setLoading(true)
+    // Ambil kode mentor aktif (Default: AX7H6J)
+    const mentorCode = localStorage.getItem('mentor_code_active') || 'AX7H6J'
 
-      const { data, error } = await supabase
-        .from('ideas')
-        .select('*')
-        .order('id', { ascending: false })
+    // 1. Ambil ID tim yang dibimbing oleh mentor_code ini
+    const { data: teamsData, error: teamsError } = await supabase
+      .from('teams')
+      .select('id, team_name')
+      .eq('mentor_code', mentorCode)
 
-      if (isCancelled) return
-
-      if (!error && data) {
-        setSubmissions(data)
-      }
-
+    if (teamsError) {
+      console.error('Error fetching supervised teams:', teamsError)
       setLoading(false)
+      return
     }
 
-    void loadSubmissions()
+    const teamIds = teamsData?.map(t => t.id) || []
 
-    return () => {
-      isCancelled = true
+    if (teamIds.length === 0) {
+      setSubmissions([])
+      setLoading(false)
+      return
     }
+
+    // 2. Ambil ide/submission dari siswa yang tim_id-nya ada di daftar tim bimbingan
+    const { data, error } = await supabase
+      .from('ideas')
+      .select('*')
+      .in('team_id', teamIds)
+      .order('id', { ascending: false })
+
+    if (!error && data) {
+      setSubmissions(data)
+    }
+
+    setLoading(false)
   }, [])
 
-  // Fungsi mentor untuk mengubah status (Approved / Needs Revision / Prototype) & Feasibility Score
+  useEffect(() => {
+  }, [loadSubmissions])
+
+  // Fungsi mentor untuk mengubah status submission (Approved / Prototype / dll)
   async function handleUpdateStatus(id: number, newStatus: string) {
     const { error } = await supabase
       .from('ideas')
@@ -55,9 +73,12 @@ export default function StudentSubmissionsPage() {
 
     if (!error) {
       setSubmissions(submissions.map(s => s.id === id ? { ...s, status: newStatus } : s))
+      setToast(`Submission status updated to ${newStatus}!`)
     } else {
-      alert("Failed to update status: " + error.message)
+      setToast("Failed to update status: " + error.message)
     }
+
+    setTimeout(() => setToast(null), 3000)
   }
 
   return (
@@ -65,7 +86,7 @@ export default function StudentSubmissionsPage() {
       <div>
         <h1 className="text-2xl font-extrabold">Student Submissions &amp; Review 📋</h1>
         <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-          Review, validate, and update innovation submissions coming from student Idea Banks.
+          Review, validate, and update innovation submissions coming from your supervised student teams.
         </p>
       </div>
 
@@ -78,7 +99,7 @@ export default function StudentSubmissionsPage() {
           </div>
           <h3 className="font-bold">No Submissions Found</h3>
           <p className={`text-xs max-w-sm mx-auto ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-            Students have not submitted any ideas yet.
+            No student submissions are linked to your mentor code yet. Once students submit their project ideas, they will appear here automatically.
           </p>
         </div>
       ) : (
@@ -112,7 +133,7 @@ export default function StudentSubmissionsPage() {
 
                 {item.tags && (
                   <div className="flex flex-wrap gap-1 pt-1">
-                    {(Array.isArray(item.tags) ? item.tags : [item.tags]).map((tag, idx) => (
+                    {(Array.isArray(item.tags) ? item.tags : [String(item.tags)]).map((tag, idx) => (
                       <span key={idx} className={`text-[10px] px-2 py-0.5 rounded font-medium ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-[#fff1e5] text-[#534434]'}`}>
                         #{String(tag).trim()}
                       </span>
@@ -129,12 +150,14 @@ export default function StudentSubmissionsPage() {
                 
                 <div className="flex items-center gap-2">
                   <button 
+                    type="button"
                     onClick={() => handleUpdateStatus(item.id, 'Approved')}
                     className="px-3 py-1.5 text-xs font-bold bg-blue-500/10 text-blue-600 border border-blue-500/30 rounded-xl hover:bg-blue-500/20 transition cursor-pointer"
                   >
                     Approve
                   </button>
                   <button 
+                    type="button"
                     onClick={() => handleUpdateStatus(item.id, 'Prototype')}
                     className="px-3 py-1.5 text-xs font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/20 transition cursor-pointer"
                   >
@@ -144,6 +167,12 @@ export default function StudentSubmissionsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-600 shadow-lg">
+          {toast}
         </div>
       )}
     </div>
