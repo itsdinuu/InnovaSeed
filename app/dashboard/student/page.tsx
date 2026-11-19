@@ -32,6 +32,34 @@ type MentorFeedbackItem = {
   created_at?: string
 }
 
+function getMentorInitials(name?: string) {
+  if (!name) return 'MN'
+  const cleaned = name.replace(/^(dr\.|prof\.|mr\.|mrs\.|ms\.)\s*/i, '').trim()
+  const parts = cleaned.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+  }
+  return (parts[0]?.slice(0, 2) || 'MN').toUpperCase()
+}
+
+function isCompletedTaskStatus(rawStatus: unknown): boolean {
+  const normalized = String(rawStatus ?? '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .trim()
+  return (
+    normalized === 'completed' ||
+    normalized === 'complete' ||
+    normalized === 'done' ||
+    normalized === 'finished'
+  )
+}
+
+function getOwnerIdFromRow(row: Record<string, unknown>): string | null {
+  const raw = row.user_id ?? row.author_id ?? row.owner_id ?? row.created_by ?? null
+  return raw === undefined || raw === null || String(raw).trim() === '' ? null : String(raw)
+}
+
 export default function StudentDashboardPage() {
   const { isDarkMode } = useTheme()
   const [userName, setUserName] = useState('')
@@ -39,15 +67,21 @@ export default function StudentDashboardPage() {
   const [activeCompetition, setActiveCompetition] = useState<CompetitionData | null>(null)
   const [isEnrolledCompetition, setIsEnrolledCompetition] = useState(false)
   const [daysUntilDeadline, setDaysUntilDeadline] = useState<number | null>(null)
+  const [linkedMentorId, setLinkedMentorId] = useState<string | null>(null)
+  const [linkedMentorName, setLinkedMentorName] = useState<string | null>(null)
   const [latestFeedback, setLatestFeedback] = useState<MentorFeedbackItem | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   // State data real & interaksi
   const [prototypeNotesCount, setPrototypeNotesCount] = useState(0)
   const [sampleId, setSampleId] = useState('V1.0 - Lab Test')
+  const [labStatus, setLabStatus] = useState<'working_well' | 'needs_revision' | 'critical_issue'>(
+    'working_well'
+  )
   const [experimentalMetric, setExperimentalMetric] = useState('')
   const [experimentalNote, setExperimentalNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [requestingReview, setRequestingReview] = useState(false)
   const [loading, setLoading] = useState(true)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
@@ -96,9 +130,10 @@ export default function StudentDashboardPage() {
           'Student'
         if (isMounted) setUserName(resolvedName)
 
-        // 2. Prioritaskan proyek aktif yang sedang dikerjakan di tabel `projects` milik user
+        // 2. Ambil proyek aktif milik user yang sedang login (satu user satu data)
         let resolvedProject: ProjectData | null = null
         let rawActiveProjectRow: Record<string, unknown> | null = null
+        const userProjectIds = new Set<string>()
 
         const { data: projRecords } = await supabase
           .from('projects')
@@ -107,9 +142,14 @@ export default function StudentDashboardPage() {
 
         if (projRecords && projRecords.length > 0) {
           const userProjects = (projRecords as Record<string, unknown>[]).filter((row) => {
-            const ownerVal = row.user_id ?? row.author_id ?? row.owner_id
-            if (ownerVal === undefined || ownerVal === null) return true
-            return String(ownerVal) === user.id
+            const ownerId = getOwnerIdFromRow(row)
+            return ownerId === user.id
+          })
+
+          userProjects.forEach((p) => {
+            if (p.id !== undefined && p.id !== null) {
+              userProjectIds.add(String(p.id))
+            }
           })
 
           if (userProjects.length > 0) {
@@ -135,7 +175,7 @@ export default function StudentDashboardPage() {
           }
         }
 
-        // Fallback ke `ideas` hanya jika belum ada proyek di `projects`
+        // Fallback ke `ideas` milik user hanya jika belum ada proyek di `projects`
         if (!resolvedProject) {
           const { data: ideaRecords } = await supabase
             .from('ideas')
@@ -147,6 +187,9 @@ export default function StudentDashboardPage() {
           if (ideaRecords && ideaRecords.length > 0) {
             const idea = ideaRecords[0]
             rawActiveProjectRow = idea as Record<string, unknown>
+            if (idea.id !== undefined && idea.id !== null) {
+              userProjectIds.add(String(idea.id))
+            }
             resolvedProject = {
               id: String(idea.id),
               title: String(idea.title ?? 'Untitled Idea'),
@@ -165,43 +208,50 @@ export default function StudentDashboardPage() {
           setProjectData(resolvedProject)
         }
 
-        // 3. Ambil jumlah catatan prototipe asli dari `prototype_notes` untuk proyek aktif
+        // 3. Ambil jumlah catatan prototipe HANYA untuk proyek aktif milik user
         let notesCount = 0
         if (resolvedProject) {
-          const { data: notesData } = await supabase
-            .from('prototype_notes')
-            .select('id')
-            .eq('project_id', resolvedProject.id)
-            .eq('author_id', user.id)
-
-          notesCount = notesData ? notesData.length : 0
+          const { data: allNotes } = await supabase.from('prototype_notes').select('*')
+          if (allNotes && Array.isArray(allNotes)) {
+            const ownNotes = (allNotes as Record<string, unknown>[]).filter((n) => {
+              const pid = n.project_id ?? n.project_uuid ?? n.idea_id
+              const ownerId = getOwnerIdFromRow(n)
+              const belongsToActiveProject =
+                pid !== undefined && pid !== null && String(pid) === resolvedProject.id
+              const belongsToUser = ownerId === user.id
+              return belongsToActiveProject && (ownerId === null || belongsToUser)
+            })
+            notesCount = ownNotes.length
+          }
           if (isMounted) setPrototypeNotesCount(notesCount)
         }
 
-        // 4. Ambil task stats asli dari `project_tasks` (filter proyek aktif jika ada)
-        let tasksQuery = supabase
-          .from('project_tasks')
-          .select('status, project_id')
-          .eq('user_id', user.id)
+        // 4. Ambil task stats HANYA milik proyek aktif / user yang sedang login (bukan proyek orang lain)
+        const { data: allTasksRaw } = await supabase.from('project_tasks').select('*')
+        const allTasks = (allTasksRaw || []) as Record<string, unknown>[]
 
-        if (resolvedProject) {
-          tasksQuery = tasksQuery.eq('project_id', resolvedProject.id)
-        }
+        const ownProjectTasks = allTasks.filter((t) => {
+          const taskProjId = t.project_id ?? t.project_uuid ?? t.workspace_id ?? t.idea_id
+          const taskOwnerId = getOwnerIdFromRow(t)
 
-        const { data: tasksData } = await tasksQuery
+          // Jika task punya project_id, pastikan project_id tersebut milik user yang login
+          if (taskProjId !== undefined && taskProjId !== null && String(taskProjId).trim() !== '') {
+            const pidStr = String(taskProjId)
+            if (resolvedProject) {
+              return pidStr === resolvedProject.id && (taskOwnerId === null || taskOwnerId === user.id)
+            }
+            return userProjectIds.has(pidStr) && (taskOwnerId === null || taskOwnerId === user.id)
+          }
 
-        let calcTotal = 0
-        let calcCompleted = 0
-        if (tasksData && tasksData.length > 0) {
-          calcTotal = tasksData.length
-          calcCompleted = tasksData.filter(
-            (t) =>
-              t.status === 'Completed' ||
-              t.status === 'completed' ||
-              t.status === 'done' ||
-              t.status === 'Done'
-          ).length
-          if (isMounted) setTaskStats({ total: calcTotal, completed: calcCompleted })
+          // Jika task tidak punya project_id, pastikan pemiliknya memang user yang login
+          return taskOwnerId === user.id
+        })
+
+        const calcTotal = ownProjectTasks.length
+        const calcCompleted = ownProjectTasks.filter((t) => isCompletedTaskStatus(t.status)).length
+
+        if (isMounted) {
+          setTaskStats({ total: calcTotal, completed: calcCompleted })
         }
 
         const taskPercent = calcTotal > 0 ? Math.round((calcCompleted / calcTotal) * 100) : 0
@@ -215,49 +265,123 @@ export default function StudentDashboardPage() {
           })
         }
 
-        // 5. Ambil rating & ulasan mentor asli dari `mentor_feedback`
-        const { data: feedbackData } = await supabase
-          .from('mentor_feedback')
+        // 5. Cek apakah akun siswa / proyek aktif sudah terhubung ke Mentor
+        let resolvedMentorId: string | null =
+          (rawActiveProjectRow?.mentor_id as string | undefined) ||
+          (rawActiveProjectRow?.advisor_id as string | undefined) ||
+          null
+        let resolvedMentorName: string | null = null
+
+        const { data: studentProfile } = await supabase
+          .from('profiles')
           .select('*')
-          .order('created_at', { ascending: false })
+          .eq('id', user.id)
+          .maybeSingle()
 
-        if (isMounted && feedbackData && feedbackData.length > 0) {
-          const relevantFeedback = (feedbackData as Record<string, unknown>[]).filter((fb) => {
-            if (fb.student_id && String(fb.student_id) !== user.id) return false
-            if (resolvedProject && fb.project_id && String(fb.project_id) !== resolvedProject.id) {
-              return false
+        if (studentProfile) {
+          const profRec = studentProfile as Record<string, unknown>
+          const profMentorId =
+            (profRec.mentor_id as string | undefined) ||
+            (profRec.assigned_mentor_id as string | undefined) ||
+            (profRec.supervisor_id as string | undefined)
+          if (profMentorId) {
+            resolvedMentorId = String(profMentorId)
+          }
+        }
+
+        if (!resolvedMentorId) {
+          const { data: linkRow } = await supabase
+            .from('mentor_students')
+            .select('*')
+            .eq('student_id', user.id)
+            .limit(1)
+            .maybeSingle()
+
+          if (linkRow) {
+            const linkRec = linkRow as Record<string, unknown>
+            if (linkRec.mentor_id) {
+              resolvedMentorId = String(linkRec.mentor_id)
             }
-            return true
-          })
-
-          const listToUse =
-            relevantFeedback.length > 0
-              ? relevantFeedback
-              : (feedbackData as Record<string, unknown>[])
-
-          const ratedItems = listToUse.filter((fb) => typeof fb.rating === 'number' && fb.rating > 0)
-          if (ratedItems.length > 0) {
-            const totalScore = ratedItems.reduce((acc, curr) => acc + Number(curr.rating || 0), 0)
-            const avgScore = Number((totalScore / ratedItems.length).toFixed(1))
-            setMentorRating({ score: avgScore, count: ratedItems.length })
           }
+        }
 
-          const latest = listToUse[0]
-          if (latest) {
-            setLatestFeedback({
-              id: (latest.id as string | number) ?? 1,
-              mentor_name: (latest.mentor_name as string | undefined) || 'Mentor Advisor',
-              mentor_role: (latest.mentor_role as string | undefined) || 'Innovation Reviewer',
-              comment: String(
-                latest.feedback_text ??
-                  latest.comment ??
-                  latest.message ??
-                  'Keep updating your prototype logs and milestone tasks.'
-              ),
-              rating: latest.rating as number | undefined,
-              created_at: latest.created_at as string | undefined,
+        if (resolvedMentorId) {
+          const { data: mentorProf } = await supabase
+            .from('profiles')
+            .select('full_name, name, email')
+            .eq('id', resolvedMentorId)
+            .maybeSingle()
+
+          if (mentorProf) {
+            const mRec = mentorProf as Record<string, unknown>
+            resolvedMentorName =
+              (mRec.full_name as string | undefined) ||
+              (mRec.name as string | undefined) ||
+              (mRec.email as string | undefined)?.split('@')[0] ||
+              null
+          }
+        }
+
+        if (isMounted) {
+          setLinkedMentorId(resolvedMentorId)
+          setLinkedMentorName(resolvedMentorName)
+        }
+
+        // Ambil `mentor_feedback` HANYA jika siswa sudah terhubung ke mentor
+        if (resolvedMentorId) {
+          const { data: feedbackData } = await supabase
+            .from('mentor_feedback')
+            .select('*')
+            .order('created_at', { ascending: false })
+
+          if (isMounted && feedbackData && feedbackData.length > 0) {
+            const relevantFeedback = (feedbackData as Record<string, unknown>[]).filter((fb) => {
+              const matchesStudent =
+                (fb.student_id && String(fb.student_id) === user.id) ||
+                (fb.user_id && String(fb.user_id) === user.id) ||
+                (resolvedProject && fb.project_id && String(fb.project_id) === resolvedProject.id)
+
+              if (!matchesStudent) return false
+
+              if (fb.mentor_id && String(fb.mentor_id) !== resolvedMentorId) {
+                return false
+              }
+              return true
             })
+
+            const ratedItems = relevantFeedback.filter(
+              (fb) => typeof fb.rating === 'number' && fb.rating > 0
+            )
+            if (ratedItems.length > 0) {
+              const totalScore = ratedItems.reduce((acc, curr) => acc + Number(curr.rating || 0), 0)
+              const avgScore = Number((totalScore / ratedItems.length).toFixed(1))
+              setMentorRating({ score: avgScore, count: ratedItems.length })
+            }
+
+            const latest = relevantFeedback[0]
+            if (latest) {
+              setLatestFeedback({
+                id: (latest.id as string | number) ?? 1,
+                mentor_name:
+                  (latest.mentor_name as string | undefined) ||
+                  resolvedMentorName ||
+                  'Assigned Mentor',
+                mentor_role:
+                  (latest.mentor_role as string | undefined) || 'Assigned Innovation Mentor',
+                comment: String(
+                  latest.feedback_text ??
+                    latest.comment ??
+                    latest.message ??
+                    'Keep updating your prototype logs and milestone tasks.'
+                ),
+                rating: latest.rating as number | undefined,
+                created_at: latest.created_at as string | undefined,
+              })
+            }
           }
+        } else if (isMounted) {
+          setMentorRating({ score: 'No Mentor', count: 0 })
+          setLatestFeedback(null)
         }
 
         // 6. Ambil dari tabel `competitions` (kolom `deadline` adalah hari terakhir pendaftaran/submit)
@@ -310,8 +434,7 @@ export default function StudentDashboardPage() {
           .filter((c) => !Number.isNaN(c.deadlineEndOfDayMs) && c.deadlineEndOfDayMs >= todayStartMs)
           .sort((a, b) => a.deadlineEndOfDayMs - b.deadlineEndOfDayMs)
 
-        const selectedComp =
-          joinedComps[0] ?? openUpcomingComps[0] ?? parsedComps[0] ?? null
+        const selectedComp = joinedComps[0] ?? openUpcomingComps[0] ?? parsedComps[0] ?? null
 
         if (isMounted) {
           if (selectedComp) {
@@ -353,6 +476,48 @@ export default function StudentDashboardPage() {
     }
   }, [])
 
+  // Request mentor review untuk prototype note terbaru (hanya jika sudah terhubung ke mentor)
+  const handleQuickRequestReview = async () => {
+    if (!currentUserId || !projectData || !linkedMentorId || requestingReview) return
+    setRequestingReview(true)
+
+    try {
+      const { data: latestNote, error: fetchError } = await supabase
+        .from('prototype_notes')
+        .select('id')
+        .eq('project_id', projectData.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (fetchError) throw fetchError
+
+      if (!latestNote?.id) {
+        triggerToast('Add a prototype note first before requesting mentor review.')
+        return
+      }
+
+      const { error: updateError } = await supabase
+        .from('prototype_notes')
+        .update({
+          is_review_requested: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', latestNote.id)
+
+      if (updateError) throw updateError
+
+      triggerToast(
+        `Mentor review requested from ${linkedMentorName || 'your linked mentor'}!`
+      )
+    } catch (err: unknown) {
+      console.error(err)
+      triggerToast('Failed to send mentor review request.')
+    } finally {
+      setRequestingReview(false)
+    }
+  }
+
   // Simpan entri Quick Lab Logger langsung ke `prototype_notes` proyek aktif
   const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -368,8 +533,8 @@ export default function StudentDashboardPage() {
         {
           project_id: projectData.id,
           author_id: currentUserId,
-          version_tag: sampleId.trim() || 'V1.0 - Quick Lab Test',
-          status: 'working_well',
+          version_tag: sampleId.trim() || 'V1.0 - Lab Test',
+          status: labStatus,
           what_was_tested: experimentalMetric.trim() || 'Quick experimental parameter check',
           observations_issues: experimentalNote.trim() || null,
           next_steps: null,
@@ -518,7 +683,9 @@ export default function StudentDashboardPage() {
               )}
             </div>
             <span className="text-xs text-slate-400 block mt-1">
-              {mentorRating.count > 0
+              {!linkedMentorId
+                ? 'Link a mentor account first'
+                : mentorRating.count > 0
                 ? `${mentorRating.count} Recent endorsements`
                 : 'Awaiting mentor review'}
             </span>
@@ -718,9 +885,7 @@ export default function StudentDashboardPage() {
                 </span>
               </div>
               <span className="px-2 py-0.5 rounded-full bg-white/10 text-white text-[10px]">
-                {isEnrolledCompetition
-                  ? 'Joined'
-                  : activeCompetition?.level || 'Open Now'}
+                {isEnrolledCompetition ? 'Joined' : activeCompetition?.level || 'Open Now'}
               </span>
             </div>
 
@@ -821,22 +986,36 @@ export default function StudentDashboardPage() {
                 <h3 className="text-sm font-bold">Mentor Feedback &amp; Updates</h3>
               </div>
               <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-[10px] font-bold border border-amber-500/30">
-                {latestFeedback ? 'Synced' : 'No Notes'}
+                {!linkedMentorId
+                  ? 'Mentor Not Linked'
+                  : latestFeedback
+                  ? 'Linked & Synced'
+                  : 'Connected'}
               </span>
             </div>
 
-            {latestFeedback ? (
+            {!linkedMentorId ? (
+              <div className="py-8 text-center space-y-2">
+                <div className="w-10 h-10 mx-auto rounded-full bg-amber-500/10 text-amber-500 grid place-items-center text-sm border border-amber-500/30">
+                  <i className="fa-solid fa-user-plus"></i>
+                </div>
+                <p className="text-xs font-bold">No Mentor Linked to Your Account</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Connect your student account to a mentor first to receive evaluations, ratings, and prototype feedback.
+                </p>
+              </div>
+            ) : latestFeedback ? (
               <div className="flex items-start gap-3 mt-4">
                 <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-600 font-bold grid place-items-center shrink-0 border border-amber-500/30">
-                  {(latestFeedback.mentor_name || 'M').slice(0, 2).toUpperCase()}
+                  {getMentorInitials(latestFeedback.mentor_name)}
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center justify-between text-xs gap-2">
                     <div>
                       <h4 className="font-bold">{latestFeedback.mentor_name}</h4>
                       <span className="text-slate-400 text-[11px]">{latestFeedback.mentor_role}</span>
                     </div>
-                    <span className="text-slate-400 text-[11px]">
+                    <span className="text-slate-400 text-[11px] shrink-0">
                       {latestFeedback.created_at
                         ? new Date(latestFeedback.created_at).toLocaleDateString('id-ID', {
                             dateStyle: 'medium',
@@ -855,28 +1034,41 @@ export default function StudentDashboardPage() {
               </div>
             ) : (
               <div className="py-8 text-center text-xs text-slate-400">
-                No mentor feedback recorded yet. Request a review from your Prototype Notes page.
+                Connected to <b>{linkedMentorName || 'your mentor'}</b>. No feedback notes submitted yet.
               </div>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-inherit mt-4">
-            <Link
-              href="/dashboard/mentor-feedback"
-              className="px-3 py-1.5 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-600 transition shadow-sm"
-            >
-              Review Feedback
-            </Link>
-            <Link
-              href="/dashboard/notes"
-              className={`px-3 py-1.5 border rounded-xl text-xs font-medium transition ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200'
-                  : 'border-[#d8c3ad] bg-[#fff8f4] hover:bg-[#fbebdd]'
-              }`}
-            >
-              Request Mentor Review
-            </Link>
+            {!linkedMentorId ? (
+              <Link
+                href="/dashboard/mentor-feedback"
+                className="px-3 py-1.5 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-600 transition shadow-sm"
+              >
+                Link Mentor Account
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/dashboard/mentor-feedback"
+                  className="px-3 py-1.5 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-600 transition shadow-sm"
+                >
+                  Review Feedback
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleQuickRequestReview}
+                  disabled={requestingReview || !projectData}
+                  className={`px-3 py-1.5 border rounded-xl text-xs font-medium transition cursor-pointer disabled:opacity-50 ${
+                    isDarkMode
+                      ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200'
+                      : 'border-[#d8c3ad] bg-[#fff8f4] hover:bg-[#fbebdd]'
+                  }`}
+                >
+                  {requestingReview ? 'Requesting...' : 'Request Mentor Review'}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -893,18 +1085,40 @@ export default function StudentDashboardPage() {
             </div>
 
             <form onSubmit={handleAddLog} className="space-y-3 mt-3 text-xs">
-              <div>
-                <label className="block text-slate-400 mb-1">Iteration / Version Tag</label>
-                <input
-                  type="text"
-                  value={sampleId}
-                  onChange={(e) => setSampleId(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-xl outline-none border ${
-                    isDarkMode
-                      ? 'bg-slate-800 border-slate-700 text-white'
-                      : 'bg-[#fff8f4] border-[#d8c3ad]'
-                  }`}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1">Iteration / Version Tag</label>
+                  <input
+                    type="text"
+                    value={sampleId}
+                    onChange={(e) => setSampleId(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-xl outline-none border ${
+                      isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-white'
+                        : 'bg-[#fff8f4] border-[#d8c3ad]'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Test Status</label>
+                  <select
+                    value={labStatus}
+                    onChange={(e) =>
+                      setLabStatus(
+                        e.target.value as 'working_well' | 'needs_revision' | 'critical_issue'
+                      )
+                    }
+                    className={`w-full px-3 py-2 rounded-xl outline-none border cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-white'
+                        : 'bg-[#fff8f4] border-[#d8c3ad]'
+                    }`}
+                  >
+                    <option value="working_well">Working Well</option>
+                    <option value="needs_revision">Needs Revision</option>
+                    <option value="critical_issue">Critical Issue</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-slate-400 mb-1">What Was Tested / Metric</label>
