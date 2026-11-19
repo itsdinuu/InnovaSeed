@@ -2,7 +2,7 @@ import './globals.css'
 import '@fortawesome/fontawesome-free/css/all.min.css' // <-- Wajib ada di sini!
 
 export const metadata = {
-  title: 'InnovaSeed v2',
+  title: 'InnovaSeed',
   description: 'Young Innovator Hub',
   icons: {
     icon: '/favicon.ico',
