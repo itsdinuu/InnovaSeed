@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useTheme } from '@/context/ThemeContext'
@@ -23,10 +23,11 @@ type CompetitionData = {
   deadline?: string
 }
 
-type MentorFeedbackItem = {
+type ConversationMessageItem = {
   id: string | number
-  mentor_name?: string
-  mentor_role?: string
+  senderName: string
+  senderRole: string
+  direction: 'MENTOR_TO_STUDENT' | 'STUDENT_TO_MENTOR'
   comment: string
   rating?: number
   created_at?: string
@@ -60,6 +61,34 @@ function getOwnerIdFromRow(row: Record<string, unknown>): string | null {
   return raw === undefined || raw === null || String(raw).trim() === '' ? null : String(raw)
 }
 
+function parseScopedFeedback(rawText: string): {
+  mentorId: string | null
+  studentId: string | null
+  projectId: string | null
+  direction: 'MENTOR_TO_STUDENT' | 'STUDENT_TO_MENTOR' | null
+  cleanText: string
+} {
+  const match = rawText.match(
+    /^\[LINK:([^|\]]*)\|([^|\]]*)\|([^|\]]*)(?:\|([^\]]*))?\]\s*([\s\S]*)$/
+  )
+  if (!match) {
+    return {
+      mentorId: null,
+      studentId: null,
+      projectId: null,
+      direction: null,
+      cleanText: rawText,
+    }
+  }
+  return {
+    mentorId: match[1] || null,
+    studentId: match[2] || null,
+    projectId: match[3] || null,
+    direction: match[4] === 'STUDENT_TO_MENTOR' ? 'STUDENT_TO_MENTOR' : 'MENTOR_TO_STUDENT',
+    cleanText: match[5]?.trim() || '',
+  }
+}
+
 export default function StudentDashboardPage() {
   const { isDarkMode } = useTheme()
   const [userName, setUserName] = useState('')
@@ -69,7 +98,7 @@ export default function StudentDashboardPage() {
   const [daysUntilDeadline, setDaysUntilDeadline] = useState<number | null>(null)
   const [linkedMentorId, setLinkedMentorId] = useState<string | null>(null)
   const [linkedMentorName, setLinkedMentorName] = useState<string | null>(null)
-  const [latestFeedback, setLatestFeedback] = useState<MentorFeedbackItem | null>(null)
+  const [conversationList, setConversationList] = useState<ConversationMessageItem[]>([])
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   // State data real & interaksi
@@ -96,387 +125,443 @@ export default function StudentDashboardPage() {
     statusText: 'Pending',
   })
 
-  const triggerToast = (message: string) => {
+  const triggerToast = useCallback((message: string) => {
     setToastMessage(message)
     setTimeout(() => {
       setToastMessage(null)
     }, 4000)
-  }
+  }, [])
 
-  useEffect(() => {
-    let isMounted = true
+  const loadDashboardData = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true)
 
-    async function initDashboard() {
-      try {
-        setLoading(true)
+      const {
+        data: { session },
+        error: authError,
+      } = await supabase.auth.getSession()
+      if (authError || !session?.user) {
+        if (!silent) setLoading(false)
+        return
+      }
 
-        // 1. Ambil sesi auth user yang sedang login
-        const {
-          data: { session },
-          error: authError,
-        } = await supabase.auth.getSession()
-        if (authError || !session?.user) {
-          if (isMounted) setLoading(false)
-          return
-        }
+      const user = session.user
+      setCurrentUserId(user.id)
 
-        const user = session.user
-        if (isMounted) setCurrentUserId(user.id)
+      const resolvedName =
+        (user.user_metadata?.full_name as string | undefined) ||
+        (user.user_metadata?.name as string | undefined) ||
+        user.email?.split('@')[0] ||
+        'Student'
+      setUserName(resolvedName)
 
-        const resolvedName =
-          (user.user_metadata?.full_name as string | undefined) ||
-          (user.user_metadata?.name as string | undefined) ||
-          user.email?.split('@')[0] ||
-          'Student'
-        if (isMounted) setUserName(resolvedName)
+      // 2. Ambil proyek aktif milik user
+      let resolvedProject: ProjectData | null = null
+      let rawActiveProjectRow: Record<string, unknown> | null = null
+      const userProjectIds = new Set<string>()
 
-        // 2. Ambil proyek aktif milik user yang sedang login (satu user satu data)
-        let resolvedProject: ProjectData | null = null
-        let rawActiveProjectRow: Record<string, unknown> | null = null
-        const userProjectIds = new Set<string>()
+      const { data: projRecords } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-        const { data: projRecords } = await supabase
-          .from('projects')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (projRecords && projRecords.length > 0) {
-          const userProjects = (projRecords as Record<string, unknown>[]).filter((row) => {
-            const ownerId = getOwnerIdFromRow(row)
-            return ownerId === user.id
-          })
-
-          userProjects.forEach((p) => {
-            if (p.id !== undefined && p.id !== null) {
-              userProjectIds.add(String(p.id))
-            }
-          })
-
-          if (userProjects.length > 0) {
-            const proj = userProjects[0]
-            rawActiveProjectRow = proj
-            const rawStatus = (proj.status ?? proj.approval_status ?? 'PROTOTYPE ACTIVE') as string
-            resolvedProject = {
-              id: String(proj.id),
-              title: String(proj.title ?? 'Untitled Project'),
-              subtitle: proj.subtitle as string | undefined,
-              description:
-                (proj.description as string | undefined) ||
-                (proj.problem_statement as string | undefined) ||
-                (proj.subtitle as string | undefined) ||
-                'Active innovation prototype build phase in progress.',
-              status: rawStatus.toUpperCase(),
-              category:
-                (proj.category as string | undefined) ||
-                (proj.research_field as string | undefined) ||
-                'Applied Sciences & Engineering',
-              project_code: proj.project_code as string | undefined,
-            }
-          }
-        }
-
-        // Fallback ke `ideas` milik user hanya jika belum ada proyek di `projects`
-        if (!resolvedProject) {
-          const { data: ideaRecords } = await supabase
-            .from('ideas')
-            .select('*')
-            .eq('author_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-
-          if (ideaRecords && ideaRecords.length > 0) {
-            const idea = ideaRecords[0]
-            rawActiveProjectRow = idea as Record<string, unknown>
-            if (idea.id !== undefined && idea.id !== null) {
-              userProjectIds.add(String(idea.id))
-            }
-            resolvedProject = {
-              id: String(idea.id),
-              title: String(idea.title ?? 'Untitled Idea'),
-              description:
-                idea.problem_statement ||
-                idea.description ||
-                'Active innovation prototype build phase in progress.',
-              status: idea.status ? String(idea.status).toUpperCase() : 'IDEA ACTIVE',
-              category:
-                idea.research_field || idea.category || 'Applied Sciences & Engineering',
-            }
-          }
-        }
-
-        if (isMounted) {
-          setProjectData(resolvedProject)
-        }
-
-        // 3. Ambil jumlah catatan prototipe HANYA untuk proyek aktif milik user
-        let notesCount = 0
-        if (resolvedProject) {
-          const { data: allNotes } = await supabase.from('prototype_notes').select('*')
-          if (allNotes && Array.isArray(allNotes)) {
-            const ownNotes = (allNotes as Record<string, unknown>[]).filter((n) => {
-              const pid = n.project_id ?? n.project_uuid ?? n.idea_id
-              const ownerId = getOwnerIdFromRow(n)
-              const belongsToActiveProject =
-                pid !== undefined && pid !== null && String(pid) === resolvedProject.id
-              const belongsToUser = ownerId === user.id
-              return belongsToActiveProject && (ownerId === null || belongsToUser)
-            })
-            notesCount = ownNotes.length
-          }
-          if (isMounted) setPrototypeNotesCount(notesCount)
-        }
-
-        // 4. Ambil task stats HANYA milik proyek aktif / user yang sedang login (bukan proyek orang lain)
-        const { data: allTasksRaw } = await supabase.from('project_tasks').select('*')
-        const allTasks = (allTasksRaw || []) as Record<string, unknown>[]
-
-        const ownProjectTasks = allTasks.filter((t) => {
-          const taskProjId = t.project_id ?? t.project_uuid ?? t.workspace_id ?? t.idea_id
-          const taskOwnerId = getOwnerIdFromRow(t)
-
-          // Jika task punya project_id, pastikan project_id tersebut milik user yang login
-          if (taskProjId !== undefined && taskProjId !== null && String(taskProjId).trim() !== '') {
-            const pidStr = String(taskProjId)
-            if (resolvedProject) {
-              return pidStr === resolvedProject.id && (taskOwnerId === null || taskOwnerId === user.id)
-            }
-            return userProjectIds.has(pidStr) && (taskOwnerId === null || taskOwnerId === user.id)
-          }
-
-          // Jika task tidak punya project_id, pastikan pemiliknya memang user yang login
-          return taskOwnerId === user.id
+      if (projRecords && projRecords.length > 0) {
+        const userProjects = (projRecords as Record<string, unknown>[]).filter((row) => {
+          const ownerId = getOwnerIdFromRow(row)
+          return ownerId === user.id
         })
 
-        const calcTotal = ownProjectTasks.length
-        const calcCompleted = ownProjectTasks.filter((t) => isCompletedTaskStatus(t.status)).length
+        userProjects.forEach((p) => {
+          if (p.id !== undefined && p.id !== null) {
+            userProjectIds.add(String(p.id))
+          }
+        })
 
-        if (isMounted) {
-          setTaskStats({ total: calcTotal, completed: calcCompleted })
+        if (userProjects.length > 0) {
+          const proj = userProjects[0]
+          rawActiveProjectRow = proj
+          const rawStatus = (proj.status ?? proj.approval_status ?? 'PROTOTYPE ACTIVE') as string
+          resolvedProject = {
+            id: String(proj.id),
+            title: String(proj.title ?? 'Untitled Project'),
+            subtitle: proj.subtitle as string | undefined,
+            description:
+              (proj.description as string | undefined) ||
+              (proj.problem_statement as string | undefined) ||
+              (proj.subtitle as string | undefined) ||
+              'Active innovation prototype build phase in progress.',
+            status: rawStatus.toUpperCase(),
+            category:
+              (proj.category as string | undefined) ||
+              (proj.research_field as string | undefined) ||
+              'Applied Sciences & Engineering',
+            project_code: proj.project_code as string | undefined,
+          }
         }
+      }
 
-        const taskPercent = calcTotal > 0 ? Math.round((calcCompleted / calcTotal) * 100) : 0
-        const logBonus = Math.min(notesCount * 5, 20)
-        const finalReadiness = Math.min(taskPercent + logBonus, 100)
-
-        if (isMounted) {
-          setReadinessIndex({
-            percentage: finalReadiness,
-            statusText: finalReadiness >= 80 ? 'Ready' : finalReadiness > 0 ? 'In Progress' : 'Pending',
-          })
-        }
-
-        // 5. Cek apakah akun siswa / proyek aktif sudah terhubung ke Mentor
-        let resolvedMentorId: string | null =
-          (rawActiveProjectRow?.mentor_id as string | undefined) ||
-          (rawActiveProjectRow?.advisor_id as string | undefined) ||
-          null
-        let resolvedMentorName: string | null = null
-
-        const { data: studentProfile } = await supabase
-          .from('profiles')
+      if (!resolvedProject) {
+        const { data: ideaRecords } = await supabase
+          .from('ideas')
           .select('*')
-          .eq('id', user.id)
+          .eq('author_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        if (ideaRecords && ideaRecords.length > 0) {
+          const idea = ideaRecords[0]
+          rawActiveProjectRow = idea as Record<string, unknown>
+          if (idea.id !== undefined && idea.id !== null) {
+            userProjectIds.add(String(idea.id))
+          }
+          resolvedProject = {
+            id: String(idea.id),
+            title: String(idea.title ?? 'Untitled Idea'),
+            description:
+              idea.problem_statement ||
+              idea.description ||
+              'Active innovation prototype build phase in progress.',
+            status: idea.status ? String(idea.status).toUpperCase() : 'IDEA ACTIVE',
+            category:
+              idea.research_field || idea.category || 'Applied Sciences & Engineering',
+          }
+        }
+      }
+
+      setProjectData(resolvedProject)
+
+      // 3. Ambil jumlah prototype_notes proyek aktif
+      let notesCount = 0
+      if (resolvedProject) {
+        const activeProjId = resolvedProject.id
+        const { data: allNotes } = await supabase.from('prototype_notes').select('*')
+        if (allNotes && Array.isArray(allNotes)) {
+          const ownNotes = (allNotes as Record<string, unknown>[]).filter((n) => {
+            const pid = n.project_id ?? n.project_uuid ?? n.idea_id
+            const ownerId = getOwnerIdFromRow(n)
+            const belongsToActiveProject =
+              pid !== undefined && pid !== null && String(pid) === activeProjId
+            const belongsToUser = ownerId === user.id
+            return belongsToActiveProject && (ownerId === null || belongsToUser)
+          })
+          notesCount = ownNotes.length
+        }
+      }
+      setPrototypeNotesCount(notesCount)
+
+      // 4. Ambil task stats
+      const { data: allTasksRaw } = await supabase.from('project_tasks').select('*')
+      const allTasks = (allTasksRaw || []) as Record<string, unknown>[]
+
+      const ownProjectTasks = allTasks.filter((t) => {
+        const taskProjId = t.project_id ?? t.project_uuid ?? t.workspace_id ?? t.idea_id
+        const taskOwnerId = getOwnerIdFromRow(t)
+
+        if (taskProjId !== undefined && taskProjId !== null && String(taskProjId).trim() !== '') {
+          const pidStr = String(taskProjId)
+          if (resolvedProject) {
+            return pidStr === resolvedProject.id && (taskOwnerId === null || taskOwnerId === user.id)
+          }
+          return userProjectIds.has(pidStr) && (taskOwnerId === null || taskOwnerId === user.id)
+        }
+
+        return taskOwnerId === user.id
+      })
+
+      const calcTotal = ownProjectTasks.length
+      const calcCompleted = ownProjectTasks.filter((t) => isCompletedTaskStatus(t.status)).length
+
+      setTaskStats({ total: calcTotal, completed: calcCompleted })
+
+      const taskPercent = calcTotal > 0 ? Math.round((calcCompleted / calcTotal) * 100) : 0
+      const logBonus = Math.min(notesCount * 5, 20)
+      const finalReadiness = Math.min(taskPercent + logBonus, 100)
+
+      setReadinessIndex({
+        percentage: finalReadiness,
+        statusText: finalReadiness >= 80 ? 'Ready' : finalReadiness > 0 ? 'In Progress' : 'Pending',
+      })
+
+      // 5. Cek mentor terhubung
+      let resolvedMentorId: string | null =
+        (rawActiveProjectRow?.mentor_id as string | undefined) ||
+        (rawActiveProjectRow?.advisor_id as string | undefined) ||
+        null
+      let resolvedMentorName: string | null = null
+
+      const { data: studentProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (studentProfile) {
+        const profRec = studentProfile as Record<string, unknown>
+        const profMentorId =
+          (profRec.mentor_id as string | undefined) ||
+          (profRec.assigned_mentor_id as string | undefined) ||
+          (profRec.supervisor_id as string | undefined)
+        if (profMentorId) {
+          resolvedMentorId = String(profMentorId)
+        }
+      }
+
+      const { data: linkRows } = await supabase
+        .from('mentor_students')
+        .select('*')
+        .eq('student_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (linkRows && linkRows.length > 0) {
+        const linksArr = linkRows as Record<string, unknown>[]
+        const acceptedLink = linksArr.find(
+          (l) => String(l.status || '').toLowerCase() === 'accepted'
+        )
+        const anyLink = acceptedLink || linksArr[0]
+        if (anyLink?.mentor_id) {
+          resolvedMentorId = String(anyLink.mentor_id)
+        }
+      }
+
+      if (resolvedMentorId) {
+        const { data: mentorProf } = await supabase
+          .from('profiles')
+          .select('full_name, name, email')
+          .eq('id', resolvedMentorId)
           .maybeSingle()
 
-        if (studentProfile) {
-          const profRec = studentProfile as Record<string, unknown>
-          const profMentorId =
-            (profRec.mentor_id as string | undefined) ||
-            (profRec.assigned_mentor_id as string | undefined) ||
-            (profRec.supervisor_id as string | undefined)
-          if (profMentorId) {
-            resolvedMentorId = String(profMentorId)
-          }
+        if (mentorProf) {
+          const mRec = mentorProf as Record<string, unknown>
+          resolvedMentorName =
+            (mRec.full_name as string | undefined) ||
+            (mRec.name as string | undefined) ||
+            (mRec.email as string | undefined)?.split('@')[0] ||
+            null
         }
-
-        if (!resolvedMentorId) {
-          const { data: linkRow } = await supabase
-            .from('mentor_students')
-            .select('*')
-            .eq('student_id', user.id)
-            .limit(1)
-            .maybeSingle()
-
-          if (linkRow) {
-            const linkRec = linkRow as Record<string, unknown>
-            if (linkRec.mentor_id) {
-              resolvedMentorId = String(linkRec.mentor_id)
-            }
-          }
-        }
-
-        if (resolvedMentorId) {
-          const { data: mentorProf } = await supabase
-            .from('profiles')
-            .select('full_name, name, email')
-            .eq('id', resolvedMentorId)
-            .maybeSingle()
-
-          if (mentorProf) {
-            const mRec = mentorProf as Record<string, unknown>
-            resolvedMentorName =
-              (mRec.full_name as string | undefined) ||
-              (mRec.name as string | undefined) ||
-              (mRec.email as string | undefined)?.split('@')[0] ||
-              null
-          }
-        }
-
-        if (isMounted) {
-          setLinkedMentorId(resolvedMentorId)
-          setLinkedMentorName(resolvedMentorName)
-        }
-
-        // Ambil `mentor_feedback` HANYA jika siswa sudah terhubung ke mentor
-        if (resolvedMentorId) {
-          const { data: feedbackData } = await supabase
-            .from('mentor_feedback')
-            .select('*')
-            .order('created_at', { ascending: false })
-
-          if (isMounted && feedbackData && feedbackData.length > 0) {
-            const relevantFeedback = (feedbackData as Record<string, unknown>[]).filter((fb) => {
-              const matchesStudent =
-                (fb.student_id && String(fb.student_id) === user.id) ||
-                (fb.user_id && String(fb.user_id) === user.id) ||
-                (resolvedProject && fb.project_id && String(fb.project_id) === resolvedProject.id)
-
-              if (!matchesStudent) return false
-
-              if (fb.mentor_id && String(fb.mentor_id) !== resolvedMentorId) {
-                return false
-              }
-              return true
-            })
-
-            const ratedItems = relevantFeedback.filter(
-              (fb) => typeof fb.rating === 'number' && fb.rating > 0
-            )
-            if (ratedItems.length > 0) {
-              const totalScore = ratedItems.reduce((acc, curr) => acc + Number(curr.rating || 0), 0)
-              const avgScore = Number((totalScore / ratedItems.length).toFixed(1))
-              setMentorRating({ score: avgScore, count: ratedItems.length })
-            }
-
-            const latest = relevantFeedback[0]
-            if (latest) {
-              setLatestFeedback({
-                id: (latest.id as string | number) ?? 1,
-                mentor_name:
-                  (latest.mentor_name as string | undefined) ||
-                  resolvedMentorName ||
-                  'Assigned Mentor',
-                mentor_role:
-                  (latest.mentor_role as string | undefined) || 'Assigned Innovation Mentor',
-                comment: String(
-                  latest.feedback_text ??
-                    latest.comment ??
-                    latest.message ??
-                    'Keep updating your prototype logs and milestone tasks.'
-                ),
-                rating: latest.rating as number | undefined,
-                created_at: latest.created_at as string | undefined,
-              })
-            }
-          }
-        } else if (isMounted) {
-          setMentorRating({ score: 'No Mentor', count: 0 })
-          setLatestFeedback(null)
-        }
-
-        // 6. Ambil dari tabel `competitions` (kolom `deadline` adalah hari terakhir pendaftaran/submit)
-        const { data: allCompetitions } = await supabase
-          .from('competitions')
-          .select('*')
-          .order('deadline', { ascending: true })
-
-        const compRows = (allCompetitions || []) as Record<string, unknown>[]
-        const linkedCompetitionId =
-          (rawActiveProjectRow?.competition_id as string | number | undefined) ??
-          (rawActiveProjectRow?.target_competition_id as string | number | undefined)
-
-        const todayStart = new Date()
-        todayStart.setHours(0, 0, 0, 0)
-        const todayStartMs = todayStart.getTime()
-
-        const parsedComps = compRows.map((row, idx) => {
-          const deadlineStr = row.deadline as string | undefined
-          const deadlineEndOfDayMs = deadlineStr
-            ? new Date(`${deadlineStr.split('T')[0]}T23:59:59`).getTime()
-            : NaN
-
-          const ownerVal = row.user_id ?? row.author_id ?? row.student_id
-          const isOwnerMatch =
-            ownerVal !== undefined && ownerVal !== null && String(ownerVal) === user.id
-          const isProjectMatch =
-            linkedCompetitionId !== undefined &&
-            linkedCompetitionId !== null &&
-            String(row.id) === String(linkedCompetitionId)
-
-          return {
-            id: (row.id as string | number) ?? idx + 1,
-            title: String(row.title ?? row.name ?? 'Innovation Competition'),
-            category:
-              (row.category as string | undefined) ||
-              (row.field as string | undefined) ||
-              (row.track as string | undefined),
-            level: (row.level as string | undefined) || 'National',
-            deadline: deadlineStr,
-            deadlineEndOfDayMs,
-            isJoined: isOwnerMatch || isProjectMatch,
-          }
-        })
-
-        // Prioritas 1: Kompetisi yang diikuti user / terhubung ke proyek aktif
-        const joinedComps = parsedComps.filter((c) => c.isJoined)
-        // Prioritas 2: Kompetisi yang masih buka (hari ini <= deadline) dan deadline-nya paling dekat
-        const openUpcomingComps = parsedComps
-          .filter((c) => !Number.isNaN(c.deadlineEndOfDayMs) && c.deadlineEndOfDayMs >= todayStartMs)
-          .sort((a, b) => a.deadlineEndOfDayMs - b.deadlineEndOfDayMs)
-
-        const selectedComp = joinedComps[0] ?? openUpcomingComps[0] ?? parsedComps[0] ?? null
-
-        if (isMounted) {
-          if (selectedComp) {
-            setActiveCompetition({
-              id: selectedComp.id,
-              title: selectedComp.title,
-              category: selectedComp.category,
-              level: selectedComp.level,
-              deadline: selectedComp.deadline,
-            })
-            setIsEnrolledCompetition(selectedComp.isJoined)
-
-            if (!Number.isNaN(selectedComp.deadlineEndOfDayMs)) {
-              const diffDays = Math.max(
-                0,
-                Math.ceil((selectedComp.deadlineEndOfDayMs - Date.now()) / (1000 * 60 * 60 * 24))
-              )
-              setDaysUntilDeadline(diffDays)
-            } else {
-              setDaysUntilDeadline(null)
-            }
-          } else {
-            setActiveCompetition(null)
-            setIsEnrolledCompetition(false)
-            setDaysUntilDeadline(null)
-          }
-        }
-      } catch (err) {
-        console.error('Error loading dashboard:', err)
-      } finally {
-        if (isMounted) setLoading(false)
       }
-    }
 
-    void initDashboard()
+      setLinkedMentorId(resolvedMentorId)
+      setLinkedMentorName(resolvedMentorName)
 
-    return () => {
-      isMounted = false
+      // 6. Ambil semua percakapan 2 arah (MENTOR_TO_STUDENT & STUDENT_TO_MENTOR) untuk pasangan ini
+      if (resolvedMentorId) {
+        const { data: feedbackData } = await supabase
+          .from('mentor_feedback')
+          .select('*')
+          .order('id', { ascending: true })
+
+        if (feedbackData && feedbackData.length > 0) {
+          const scopedMessages: ConversationMessageItem[] = []
+          const ratedRawItems: Record<string, unknown>[] = []
+
+          for (const fb of feedbackData as Record<string, unknown>[]) {
+            const rawBody = String(
+              fb.feedback_text ?? fb.comment ?? fb.message ?? ''
+            ).trim()
+            if (!rawBody) continue
+
+            const parsed = parseScopedFeedback(rawBody)
+
+            if (parsed.mentorId && parsed.studentId) {
+              if (
+                parsed.mentorId !== resolvedMentorId ||
+                parsed.studentId !== user.id
+              ) {
+                continue
+              }
+
+              const direction = parsed.direction ?? 'MENTOR_TO_STUDENT'
+              if (direction === 'MENTOR_TO_STUDENT') {
+                ratedRawItems.push(fb)
+              }
+
+              scopedMessages.push({
+                id: (fb.id as string | number) ?? scopedMessages.length + 1,
+                senderName:
+                  direction === 'STUDENT_TO_MENTOR'
+                    ? resolvedName
+                    : (fb.mentor_name as string | undefined) ||
+                      resolvedMentorName ||
+                      'Assigned Mentor',
+                senderRole:
+                  direction === 'STUDENT_TO_MENTOR'
+                    ? 'Student Check-In'
+                    : (fb.mentor_role as string | undefined) || 'Assigned Innovation Mentor',
+                direction,
+                comment: parsed.cleanText,
+                rating: fb.rating as number | undefined,
+                created_at:
+                  (fb.inserted_at as string | undefined) ||
+                  (fb.created_at as string | undefined),
+              })
+              continue
+            }
+
+            // Fallback data legacy tanpa tag [LINK:...]
+            const matchesStudent =
+              (fb.student_id && String(fb.student_id) === user.id) ||
+              (fb.user_id && String(fb.user_id) === user.id) ||
+              (resolvedProject && fb.project_id && String(fb.project_id) === resolvedProject.id)
+
+            if (!matchesStudent) continue
+            if (fb.mentor_id && String(fb.mentor_id) !== resolvedMentorId) continue
+
+            ratedRawItems.push(fb)
+            scopedMessages.push({
+              id: (fb.id as string | number) ?? scopedMessages.length + 1,
+              senderName:
+                (fb.mentor_name as string | undefined) ||
+                resolvedMentorName ||
+                'Assigned Mentor',
+              senderRole:
+                (fb.mentor_role as string | undefined) || 'Assigned Innovation Mentor',
+              direction: 'MENTOR_TO_STUDENT',
+              comment: rawBody,
+              rating: fb.rating as number | undefined,
+              created_at:
+                (fb.inserted_at as string | undefined) ||
+                (fb.created_at as string | undefined),
+            })
+          }
+
+          setConversationList(scopedMessages)
+
+          const ratedItems = ratedRawItems.filter(
+            (fb) => typeof fb.rating === 'number' && fb.rating > 0
+          )
+
+          if (ratedItems.length > 0) {
+            const totalScore = ratedItems.reduce(
+              (acc, curr) => acc + Number(curr.rating || 0),
+              0
+            )
+            const avgScore = Number((totalScore / ratedItems.length).toFixed(1))
+            setMentorRating({ score: avgScore, count: ratedItems.length })
+          } else {
+            setMentorRating({ score: 'No Review', count: 0 })
+          }
+        } else {
+          setConversationList([])
+        }
+      } else {
+        setMentorRating({ score: 'No Mentor', count: 0 })
+        setConversationList([])
+      }
+
+      // 7. Ambil data competitions
+      const { data: allCompetitions } = await supabase
+        .from('competitions')
+        .select('*')
+        .order('deadline', { ascending: true })
+
+      const compRows = (allCompetitions || []) as Record<string, unknown>[]
+      const linkedCompetitionId =
+        (rawActiveProjectRow?.competition_id as string | number | undefined) ??
+        (rawActiveProjectRow?.target_competition_id as string | number | undefined)
+
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayStartMs = todayStart.getTime()
+
+      const parsedComps = compRows.map((row, idx) => {
+        const deadlineStr = row.deadline as string | undefined
+        const deadlineEndOfDayMs = deadlineStr
+          ? new Date(`${deadlineStr.split('T')[0]}T23:59:59`).getTime()
+          : NaN
+
+        const ownerVal = row.user_id ?? row.author_id ?? row.student_id
+        const isOwnerMatch =
+          ownerVal !== undefined && ownerVal !== null && String(ownerVal) === user.id
+        const isProjectMatch =
+          linkedCompetitionId !== undefined &&
+          linkedCompetitionId !== null &&
+          String(row.id) === String(linkedCompetitionId)
+
+        return {
+          id: (row.id as string | number) ?? idx + 1,
+          title: String(row.title ?? row.name ?? 'Innovation Competition'),
+          category:
+            (row.category as string | undefined) ||
+            (row.field as string | undefined) ||
+            (row.track as string | undefined),
+          level: (row.level as string | undefined) || 'National',
+          deadline: deadlineStr,
+          deadlineEndOfDayMs,
+          isJoined: isOwnerMatch || isProjectMatch,
+        }
+      })
+
+      const joinedComps = parsedComps.filter((c) => c.isJoined)
+      const openUpcomingComps = parsedComps
+        .filter((c) => !Number.isNaN(c.deadlineEndOfDayMs) && c.deadlineEndOfDayMs >= todayStartMs)
+        .sort((a, b) => a.deadlineEndOfDayMs - b.deadlineEndOfDayMs)
+
+      const selectedComp = joinedComps[0] ?? openUpcomingComps[0] ?? parsedComps[0] ?? null
+
+      if (selectedComp) {
+        setActiveCompetition({
+          id: selectedComp.id,
+          title: selectedComp.title,
+          category: selectedComp.category,
+          level: selectedComp.level,
+          deadline: selectedComp.deadline,
+        })
+        setIsEnrolledCompetition(selectedComp.isJoined)
+
+        if (!Number.isNaN(selectedComp.deadlineEndOfDayMs)) {
+          const diffDays = Math.max(
+            0,
+            Math.ceil((selectedComp.deadlineEndOfDayMs - Date.now()) / (1000 * 60 * 60 * 24))
+          )
+          setDaysUntilDeadline(diffDays)
+        } else {
+          setDaysUntilDeadline(null)
+        }
+      } else {
+        setActiveCompetition(null)
+        setIsEnrolledCompetition(false)
+        setDaysUntilDeadline(null)
+      }
+    } catch (err) {
+      console.error('Error loading dashboard:', err)
+    } finally {
+      if (!silent) setLoading(false)
     }
   }, [])
 
-  // Request mentor review untuk prototype note terbaru (hanya jika sudah terhubung ke mentor)
+  useEffect(() => {
+    const triggerLoad = (silent: boolean) => {
+      queueMicrotask(() => {
+        void loadDashboardData(silent)
+      })
+    }
+
+    triggerLoad(false)
+
+    const channel = supabase
+      .channel('realtime-student-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mentor_feedback' }, () => {
+        triggerLoad(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mentor_students' }, () => {
+        triggerLoad(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prototype_notes' }, () => {
+        triggerLoad(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tasks' }, () => {
+        triggerLoad(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
+        triggerLoad(true)
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadDashboardData])
+
   const handleQuickRequestReview = async () => {
     if (!currentUserId || !projectData || !linkedMentorId || requestingReview) return
     setRequestingReview(true)
@@ -518,11 +603,10 @@ export default function StudentDashboardPage() {
     }
   }
 
-  // Simpan entri Quick Lab Logger langsung ke `prototype_notes` proyek aktif
   const handleAddLog = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentUserId || !projectData) {
-      triggerToast('No active project found to attach lab log.')
+      triggerToast('No active project found to attach prototype note.')
       return
     }
 
@@ -545,10 +629,10 @@ export default function StudentDashboardPage() {
 
       if (error) throw error
 
-      setPrototypeNotesCount((prev) => prev + 1)
       setExperimentalMetric('')
       setExperimentalNote('')
-      triggerToast('Lab entry saved directly to Prototype Notes!')
+      await loadDashboardData(true)
+      triggerToast('Entry saved directly to Prototype Notes!')
     } catch (err: unknown) {
       console.error(err)
       triggerToast('Failed to commit entry to Prototype Notes.')
@@ -575,6 +659,8 @@ export default function StudentDashboardPage() {
       </div>
     )
   }
+
+  const recentConversations = conversationList.slice(-3)
 
   return (
     <div className="space-y-6">
@@ -709,7 +795,7 @@ export default function StudentDashboardPage() {
               </span>
             </div>
             <span className="text-xs text-amber-500 block mt-1 font-semibold">
-              Based on tasks &amp; prototype logs
+              Based on tasks &amp; prototype notes
             </span>
           </div>
         </div>
@@ -920,7 +1006,7 @@ export default function StudentDashboardPage() {
                   <span className="text-lg font-bold text-amber-400 block">
                     {prototypeNotesCount}
                   </span>
-                  <span className="text-[9px] text-slate-400 uppercase">Lab Logs Ready</span>
+                  <span className="text-[9px] text-slate-400 uppercase">Prototype Notes</span>
                 </div>
               </div>
             </div>
@@ -971,9 +1057,9 @@ export default function StudentDashboardPage() {
         </div>
       </div>
 
-      {/* Mentor Feedback & Quick Lab Logger */}
+      {/* Mentor Feedback & Prototype Notes */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Mentor Feedback */}
+        {/* Mentor Feedback & Conversations */}
         <div
           className={`lg:col-span-6 rounded-2xl border p-6 shadow-xs flex flex-col justify-between transition-colors ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
@@ -988,8 +1074,8 @@ export default function StudentDashboardPage() {
               <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 text-[10px] font-bold border border-amber-500/30">
                 {!linkedMentorId
                   ? 'Mentor Not Linked'
-                  : latestFeedback
-                  ? 'Linked & Synced'
+                  : recentConversations.length > 0
+                  ? `${conversationList.length} Messages`
                   : 'Connected'}
               </span>
             </div>
@@ -1004,33 +1090,46 @@ export default function StudentDashboardPage() {
                   Connect your student account to a mentor first to receive evaluations, ratings, and prototype feedback.
                 </p>
               </div>
-            ) : latestFeedback ? (
-              <div className="flex items-start gap-3 mt-4">
-                <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-600 font-bold grid place-items-center shrink-0 border border-amber-500/30">
-                  {getMentorInitials(latestFeedback.mentor_name)}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between text-xs gap-2">
-                    <div>
-                      <h4 className="font-bold">{latestFeedback.mentor_name}</h4>
-                      <span className="text-slate-400 text-[11px]">{latestFeedback.mentor_role}</span>
+            ) : recentConversations.length > 0 ? (
+              <div className="mt-4 space-y-3 max-h-60 overflow-y-auto pr-1">
+                {recentConversations.map((msg) => {
+                  const isStudent = msg.direction === 'STUDENT_TO_MENTOR'
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`p-3 rounded-xl border text-xs ${
+                        isStudent
+                          ? isDarkMode
+                            ? 'bg-amber-500/10 border-amber-500/30 ml-4'
+                            : 'bg-[#FEF3C7]/60 border-amber-500/30 ml-4'
+                          : isDarkMode
+                          ? 'bg-slate-800/70 border-slate-700 mr-4'
+                          : 'bg-[#fff1e5] border-[#d8c3ad] mr-4'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-600 font-bold text-[10px] grid place-items-center shrink-0">
+                            {getMentorInitials(msg.senderName)}
+                          </span>
+                          <div>
+                            <span className="font-bold block leading-tight">{msg.senderName}</span>
+                            <span className="text-[10px] text-slate-400">{msg.senderRole}</span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-slate-400 shrink-0">
+                          {msg.created_at
+                            ? new Date(msg.created_at).toLocaleDateString('id-ID', {
+                                day: 'numeric',
+                                month: 'short',
+                              })
+                            : 'Recent'}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 leading-relaxed whitespace-pre-line">{msg.comment}</p>
                     </div>
-                    <span className="text-slate-400 text-[11px] shrink-0">
-                      {latestFeedback.created_at
-                        ? new Date(latestFeedback.created_at).toLocaleDateString('id-ID', {
-                            dateStyle: 'medium',
-                          })
-                        : 'Recent'}
-                    </span>
-                  </div>
-                  <div
-                    className={`mt-2 p-3 rounded-xl border-l-4 border-amber-500 text-xs ${
-                      isDarkMode ? 'bg-slate-800/60' : 'bg-[#fff1e5]'
-                    }`}
-                  >
-                    <p className="italic">&quot;{latestFeedback.comment}&quot;</p>
-                  </div>
-                </div>
+                  )
+                })}
               </div>
             ) : (
               <div className="py-8 text-center text-xs text-slate-400">
@@ -1053,7 +1152,7 @@ export default function StudentDashboardPage() {
                   href="/dashboard/mentor-feedback"
                   className="px-3 py-1.5 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-amber-600 transition shadow-sm"
                 >
-                  Review Feedback
+                  Open Conversation
                 </Link>
                 <button
                   type="button"
@@ -1072,7 +1171,7 @@ export default function StudentDashboardPage() {
           </div>
         </div>
 
-        {/* Quick Lab Notebook Logger Widget */}
+        {/* Prototype Notes Widget */}
         <div
           className={`lg:col-span-6 rounded-2xl border p-6 shadow-xs flex flex-col justify-between transition-colors ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
@@ -1080,8 +1179,8 @@ export default function StudentDashboardPage() {
         >
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-inherit">
-              <span className="text-sm font-bold">Quick Lab Logger</span>
-              <i className="fa-solid fa-flask-vial text-amber-500"></i>
+              <span className="text-sm font-bold">Prototype Notes</span>
+              <i className="fa-solid fa-pen-to-square text-amber-500"></i>
             </div>
 
             <form onSubmit={handleAddLog} className="space-y-3 mt-3 text-xs">

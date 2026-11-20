@@ -30,9 +30,10 @@ export default function IdeaBankPage() {
   const [activeTab, setActiveTab] = useState('All Ideas')
   const [searchQuery, setSearchQuery] = useState('')
   const [toastMessage, setToastMessage] = useState<string | null>(null)
-  
+
   const [editingId, setEditingId] = useState<number | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<'student' | 'mentor'>('student')
   const [hasActiveProject, setHasActiveProject] = useState(false)
 
@@ -58,6 +59,8 @@ export default function IdeaBankPage() {
     const email = session?.user?.email || ''
     const userId = session?.user?.id || null
 
+    setCurrentUserId(userId)
+
     if (email.includes('mentor') || email === 'plego@gmail.com') {
       setCurrentUserRole('mentor')
     } else {
@@ -82,6 +85,8 @@ export default function IdeaBankPage() {
       } else {
         setHasActiveProject(false)
       }
+    } else {
+      setHasActiveProject(false)
     }
 
     const { data } = await supabase
@@ -166,6 +171,11 @@ export default function IdeaBankPage() {
   }
 
   function handleOpenEditModal(item: Idea) {
+    if (!currentUserId || item.author_id !== currentUserId) {
+      showToast('Only the creator of this idea can edit it.')
+      return
+    }
+
     setActiveCard(null)
     setEditingId(item.id)
     setTitle(item.title || '')
@@ -189,6 +199,11 @@ export default function IdeaBankPage() {
     const userId = session?.user?.id || null
     const studentName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || 'Student Innovator'
 
+    if (!userId) {
+      showToast('Please sign in to save an idea.')
+      return
+    }
+
     let finalStatus = status
     if (currentUserRole === 'student') {
       if (finalStatus !== 'Under Validation') {
@@ -209,13 +224,21 @@ export default function IdeaBankPage() {
     }
 
     if (editingId) {
+      const targetIdea = ideas.find(i => i.id === editingId)
+      if (!targetIdea || targetIdea.author_id !== userId) {
+        showToast('You are not allowed to edit another user’s idea.')
+        return
+      }
+
       const { error } = await supabase
         .from('ideas')
         .update(payload)
         .eq('id', editingId)
+        .eq('author_id', userId)
 
       if (!error) {
         setShowModal(false)
+        setEditingId(null)
         showToast('Innovation idea successfully updated!')
         fetchIdeas()
       } else {
@@ -242,18 +265,31 @@ export default function IdeaBankPage() {
     }
   }
 
-  function handleDeleteIdea(idNumber: number) {
+  function handleDeleteIdea(item: Idea) {
+    if (!currentUserId || item.author_id !== currentUserId) {
+      showToast('Only the creator of this idea can delete it.')
+      return
+    }
+
     setActiveCard(null)
-    setDeleteConfirmId(idNumber)
+    setDeleteConfirmId(item.id)
   }
 
   async function executeDelete() {
-    if (!deleteConfirmId) return
+    if (!deleteConfirmId || !currentUserId) return
+
+    const targetIdea = ideas.find(i => i.id === deleteConfirmId)
+    if (!targetIdea || targetIdea.author_id !== currentUserId) {
+      showToast('You are not allowed to delete another user’s idea.')
+      setDeleteConfirmId(null)
+      return
+    }
 
     const { error } = await supabase
       .from('ideas')
       .delete()
       .eq('id', deleteConfirmId)
+      .eq('author_id', currentUserId)
 
     if (!error) {
       showToast('Idea deleted successfully!')
@@ -276,14 +312,14 @@ export default function IdeaBankPage() {
     }
 
     const { data: { session } } = await supabase.auth.getSession()
-    const currentUserId = session?.user?.id || null
+    const authUserId = session?.user?.id || null
 
-    if (!currentUserId) return
+    if (!authUserId) return
 
     const { data: memberData } = await supabase
       .from('team_members')
       .select('team_id')
-      .eq('user_id', currentUserId)
+      .eq('user_id', authUserId)
       .maybeSingle()
 
     const projectPayload = {
@@ -292,7 +328,7 @@ export default function IdeaBankPage() {
       title: item.title,
       subtitle: item.problem_statement || item.description || "Promoted from Idea Bank",
       team_id: memberData?.team_id || null,
-      user_id: currentUserId,
+      user_id: authUserId,
       approval_status: 'in_progress',
       created_at: new Date().toISOString()
     }
@@ -570,7 +606,7 @@ export default function IdeaBankPage() {
           </div>
 
           {filteredIdeas.map((item) => {
-            const isUserCreated = item.author_name !== 'InnovaSeed';
+            const isOwner = Boolean(currentUserId && item.author_id && item.author_id === currentUserId);
 
             return (
               <motion.div
@@ -580,7 +616,7 @@ export default function IdeaBankPage() {
                   isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100 hover:border-amber-500/50' : 'bg-white border-[#d8c3ad] hover:border-amber-500/50'
                 }`}
               >
-                {isUserCreated && (
+                {isOwner && (
                   <div className="absolute top-5 right-5 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition z-10">
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleOpenEditModal(item); }}
@@ -590,7 +626,7 @@ export default function IdeaBankPage() {
                       <i className="fa-solid fa-pen"></i>
                     </button>
                     <button 
-                      onClick={(e) => { e.stopPropagation(); handleDeleteIdea(item.id); }}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteIdea(item); }}
                       title="Delete Idea"
                       className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs transition cursor-pointer ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-rose-500/20 hover:text-rose-400' : 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600'}`}
                     >
@@ -600,7 +636,7 @@ export default function IdeaBankPage() {
                 )}
 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between pr-14">
+                  <div className={`flex items-center justify-between ${isOwner ? 'pr-14' : ''}`}>
                     <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-md ${
                       item.status === 'Prototype' ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/30' :
                       item.status === 'Approved' ? 'bg-blue-500/10 text-blue-600 border border-blue-500/30' :

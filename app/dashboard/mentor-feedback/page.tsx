@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -26,16 +26,22 @@ type LinkRecord = {
   updated_at?: string
 }
 
-type FeedbackNote = {
+type FeedbackRow = {
   id: string | number
-  mentor_id?: string
-  student_id?: string
-  project_id?: string | null
-  message?: string
-  content?: string
-  feedback?: string
-  note?: string
-  created_at?: string
+  mentor_name?: string | null
+  comment?: string | null
+  feedback_text?: string | null
+  created_at?: string | null
+  inserted_at?: string | null
+  is_read?: boolean | null
+}
+
+type DisplayFeedbackItem = {
+  id: string | number
+  senderLabel: string
+  text: string
+  createdAt?: string | null
+  isStudentNote?: boolean
 }
 
 function isUuidLike(val?: string | null) {
@@ -52,18 +58,47 @@ function firstNonEmpty(...values: unknown[]): string | null {
   return null
 }
 
+function parseScopedFeedback(rawText: string): {
+  mentorId: string | null
+  studentId: string | null
+  projectId: string | null
+  direction: 'MENTOR_TO_STUDENT' | 'STUDENT_TO_MENTOR' | null
+  cleanText: string
+} {
+  const match = rawText.match(/^\[LINK:([^|\]]*)\|([^|\]]*)\|([^|\]]*)(?:\|([^\]]*))?\]\s*([\s\S]*)$/)
+  if (!match) {
+    return {
+      mentorId: null,
+      studentId: null,
+      projectId: null,
+      direction: null,
+      cleanText: rawText,
+    }
+  }
+  const dir = match[4] === 'STUDENT_TO_MENTOR' ? 'STUDENT_TO_MENTOR' : 'MENTOR_TO_STUDENT'
+  return {
+    mentorId: match[1] || null,
+    studentId: match[2] || null,
+    projectId: match[3] || null,
+    direction: dir,
+    cleanText: match[5]?.trim() || '',
+  }
+}
+
 export default function MentorFeedbackClient() {
   const router = useRouter()
+  const pathname = usePathname()
   const { isDarkMode } = useTheme()
 
   const [studentUserId, setStudentUserId] = useState<string | null>(null)
+  const [studentName, setStudentName] = useState<string>('Student')
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const [activeProjectTitle, setActiveProjectTitle] = useState<string>('Active Innovation Project')
 
   const [mentors, setMentors] = useState<MentorOption[]>([])
   const [mentorCodeInput, setMentorCodeInput] = useState('')
   const [currentLink, setCurrentLink] = useState<LinkRecord | null>(null)
-  const [feedbackNotes, setFeedbackNotes] = useState<FeedbackNote[]>([])
+  const [feedbackNotes, setFeedbackNotes] = useState<DisplayFeedbackItem[]>([])
   const [checkInNote, setCheckInNote] = useState('')
 
   const [loading, setLoading] = useState(true)
@@ -72,6 +107,8 @@ export default function MentorFeedbackClient() {
   const [goingToWorkspace, setGoingToWorkspace] = useState(false)
   const [isSendingNote, setIsSendingNote] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
+
+  const navResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [toast, setToast] = useState<{
     title: string
@@ -87,6 +124,44 @@ export default function MentorFeedbackClient() {
     setToast({ title, message, type })
     setTimeout(() => setToast(null), 4000)
   }
+
+  // Ensure button state never stays stuck when returning to this view
+
+    useEffect(() => {
+    if (!pathname) return
+    queueMicrotask(() => {
+      setGoingToWorkspace(false)
+    })
+  }, [pathname])
+
+  useEffect(() => {
+    const resetNavState = () => {
+      if (navResetTimerRef.current) {
+        clearTimeout(navResetTimerRef.current)
+        navResetTimerRef.current = null
+      }
+      setGoingToWorkspace(false)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        resetNavState()
+      }
+    }
+
+    window.addEventListener('pageshow', resetNavState)
+    window.addEventListener('focus', resetNavState)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      if (navResetTimerRef.current) {
+        clearTimeout(navResetTimerRef.current)
+      }
+      window.removeEventListener('pageshow', resetNavState)
+      window.removeEventListener('focus', resetNavState)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -104,10 +179,21 @@ export default function MentorFeedbackClient() {
       const uid = session.user.id
       if (isMounted) setStudentUserId(uid)
 
-      const { data: projectsData } = await supabase
-        .from('projects')
-        .select('*')
-        .order('created_at', { ascending: false })
+      const [{ data: projectsData }, { data: profData }] = await Promise.all([
+        supabase.from('projects').select('*').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
+      ])
+
+      const profObj = (profData || {}) as Record<string, unknown>
+      const resolvedStudentName =
+        firstNonEmpty(
+          profObj.full_name,
+          profObj.name,
+          session.user.user_metadata?.full_name,
+          typeof session.user.email === 'string' ? session.user.email.split('@')[0] : null
+        ) || 'Student'
+
+      if (isMounted) setStudentName(resolvedStudentName)
 
       const rows = (projectsData || []) as Record<string, unknown>[]
       const ownedProject = rows.find((proj) => {
@@ -129,112 +215,134 @@ export default function MentorFeedbackClient() {
     }
   }, [])
 
-  const fetchMentorsAndLinkState = useCallback(async () => {
-    if (!studentUserId) {
-      setLoading(false)
-      return
-    }
+  const fetchMentorsAndLinkState = useCallback(
+    async (silent = false) => {
+      if (!studentUserId) {
+        setLoading(false)
+        return
+      }
 
-    setLoading(true)
+      if (!silent) setLoading(true)
 
-    try {
-      const [{ data: profilesData }, { data: linksData }, notesRes] = await Promise.all([
-        supabase.from('profiles').select('*'),
-        supabase
-          .from('mentor_students')
-          .select('*')
-          .eq('student_id', studentUserId)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('mentor_feedback')
-          .select('*')
-          .eq('student_id', studentUserId)
-          .order('created_at', { ascending: false }),
-      ])
+      try {
+        const [{ data: profilesData }, { data: linksData }, { data: feedbackRows }] =
+          await Promise.all([
+            supabase.from('profiles').select('*'),
+            supabase
+              .from('mentor_students')
+              .select('*')
+              .eq('student_id', studentUserId)
+              .order('created_at', { ascending: false }),
+            supabase.from('mentor_feedback').select('*').order('id', { ascending: false }),
+          ])
 
-      const allProfiles = (profilesData || []) as Record<string, unknown>[]
-      const mentorList: MentorOption[] = allProfiles
-        .filter((p) => {
-          const role = typeof p.role === 'string' ? p.role.toLowerCase() : ''
-          return role === 'mentor' || role === 'faculty' || Boolean(p.mentor_code)
-        })
-        .map((p) => {
-          const id = String(p.id || '')
-          const rawCode = firstNonEmpty(p.mentor_code)
-          const resolvedCode =
-            rawCode && !isUuidLike(rawCode)
-              ? rawCode.toUpperCase()
-              : `MTR-${id.replace(/-/g, '').slice(0, 6).toUpperCase()}`
+        const allProfiles = (profilesData || []) as Record<string, unknown>[]
+        const myProfile = allProfiles.find((p) => String(p.id || '') === studentUserId)
+        const profileMentorId = myProfile?.mentor_id ? String(myProfile.mentor_id) : null
 
-          return {
-            id,
-            full_name:
-              firstNonEmpty(p.full_name, p.name) ||
-              (typeof p.email === 'string' ? p.email.split('@')[0] : 'Mentor'),
-            email: typeof p.email === 'string' ? p.email : undefined,
-            mentor_code: resolvedCode,
-            specialization: firstNonEmpty(p.specialization, p.research_field, p.department),
+        const mentorList: MentorOption[] = allProfiles
+          .filter((p) => {
+            const role = typeof p.role === 'string' ? p.role.toLowerCase() : ''
+            return role === 'mentor' || role === 'faculty' || Boolean(p.mentor_code)
+          })
+          .map((p) => {
+            const id = String(p.id || '')
+            const rawCode = firstNonEmpty(p.mentor_code)
+            const resolvedCode =
+              rawCode && !isUuidLike(rawCode)
+                ? rawCode.toUpperCase()
+                : `MTR-${id.replace(/-/g, '').slice(0, 6).toUpperCase()}`
+
+            return {
+              id,
+              full_name:
+                firstNonEmpty(p.full_name, p.name) ||
+                (typeof p.email === 'string' ? p.email.split('@')[0] : 'Mentor'),
+              email: typeof p.email === 'string' ? p.email : undefined,
+              mentor_code: resolvedCode,
+              specialization: firstNonEmpty(p.specialization, p.research_field, p.department),
+            }
+          })
+
+        setMentors(mentorList)
+
+        const links = ((linksData || []) as Record<string, unknown>[]).map((row) => ({
+          ...(row as unknown as LinkRecord),
+          id: String(row.id),
+          student_id: String(row.student_id || ''),
+          mentor_id: String(row.mentor_id || ''),
+          status: String(row.status || 'pending'),
+        }))
+
+        let activeOrPending: LinkRecord | null =
+          links.find((l) => l.status === 'accepted') ||
+          links.find((l) => l.status === 'pending') ||
+          links[0] ||
+          null
+
+        if (!activeOrPending && profileMentorId) {
+          activeOrPending = {
+            id: `profile-link-${studentUserId}`,
+            student_id: studentUserId,
+            mentor_id: profileMentorId,
+            project_id: activeProjectId,
+            status: 'accepted',
           }
-        })
-
-      setMentors(mentorList)
-
-      const links = ((linksData || []) as Record<string, unknown>[]).map((row) => ({
-        ...(row as unknown as LinkRecord),
-        id: String(row.id),
-        student_id: String(row.student_id || ''),
-        mentor_id: String(row.mentor_id || ''),
-        status: String(row.status || 'pending'),
-      }))
-
-      const activeOrPending =
-        links.find((l) => l.status === 'accepted') ||
-        links.find((l) => l.status === 'pending') ||
-        links[0] ||
-        null
-
-      setCurrentLink(activeOrPending)
-
-      if (activeOrPending?.mentor_id) {
-        const matchedMentor = mentorList.find((m) => m.id === activeOrPending.mentor_id)
-        if (matchedMentor && !mentorCodeInput) {
-          setMentorCodeInput(matchedMentor.mentor_code)
         }
-      }
 
-      const combinedNotes: FeedbackNote[] = []
-      if (!notesRes.error && Array.isArray(notesRes.data)) {
-        combinedNotes.push(...(notesRes.data as FeedbackNote[]))
-      }
+        setCurrentLink(activeOrPending)
 
-      links.forEach((lnk) => {
-        const savedNote = firstNonEmpty(lnk.check_in_note)
-        if (savedNote) {
-          const exists = combinedNotes.some(
-            (n) => firstNonEmpty(n.message, n.content, n.feedback, n.note) === savedNote
-          )
-          if (!exists) {
-            combinedNotes.push({
-              id: `checkin-${lnk.id}`,
-              student_id: lnk.student_id,
-              mentor_id: lnk.mentor_id,
-              message: savedNote,
-              created_at: lnk.updated_at || lnk.created_at,
+        if (activeOrPending?.mentor_id) {
+          const matchedMentor = mentorList.find((m) => m.id === activeOrPending.mentor_id)
+          if (matchedMentor && !mentorCodeInput) {
+            setMentorCodeInput(matchedMentor.mentor_code)
+          }
+        }
+
+        const connectedMentorId =
+          activeOrPending?.status === 'accepted' ? activeOrPending.mentor_id : null
+        const connectedMentorObj = connectedMentorId
+          ? mentorList.find((m) => m.id === connectedMentorId) || null
+          : null
+
+        const scopedNotes: DisplayFeedbackItem[] = []
+
+        if (connectedMentorId && Array.isArray(feedbackRows)) {
+          for (const rawRow of feedbackRows as FeedbackRow[]) {
+            const rawBody = firstNonEmpty(rawRow.feedback_text, rawRow.comment)
+            if (!rawBody) continue
+
+            const parsed = parseScopedFeedback(rawBody)
+            if (!parsed.mentorId || !parsed.studentId) continue
+            if (parsed.mentorId !== connectedMentorId || parsed.studentId !== studentUserId) {
+              continue
+            }
+
+            const isStudentNote = parsed.direction === 'STUDENT_TO_MENTOR'
+            scopedNotes.push({
+              id: rawRow.id,
+              senderLabel: isStudentNote
+                ? `${studentName} (You)`
+                : firstNonEmpty(rawRow.mentor_name, connectedMentorObj?.full_name) || 'Mentor',
+              text: parsed.cleanText,
+              createdAt: rawRow.inserted_at || rawRow.created_at,
+              isStudentNote,
             })
           }
         }
-      })
 
-      setFeedbackNotes(combinedNotes)
-    } finally {
-      setLoading(false)
-    }
-  }, [studentUserId, mentorCodeInput])
+        setFeedbackNotes(scopedNotes)
+      } finally {
+        if (!silent) setLoading(false)
+      }
+    },
+    [studentUserId, studentName, activeProjectId, mentorCodeInput]
+  )
 
   const handleManualRefresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      await fetchMentorsAndLinkState()
+      await fetchMentorsAndLinkState(false)
       showToast('Refreshed', 'Mentor connection and feedback status updated.')
     } finally {
       setRefreshing(false)
@@ -242,13 +350,13 @@ export default function MentorFeedbackClient() {
   }, [fetchMentorsAndLinkState])
 
   useEffect(() => {
-    const triggerFetch = () => {
+    const triggerFetch = (silent: boolean) => {
       queueMicrotask(() => {
-        void fetchMentorsAndLinkState()
+        void fetchMentorsAndLinkState(silent)
       })
     }
 
-    triggerFetch()
+    triggerFetch(false)
 
     if (!studentUserId) return
 
@@ -263,7 +371,19 @@ export default function MentorFeedbackClient() {
           filter: `student_id=eq.${studentUserId}`,
         },
         () => {
-          triggerFetch()
+          triggerFetch(true)
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${studentUserId}`,
+        },
+        () => {
+          triggerFetch(true)
         }
       )
       .on(
@@ -272,10 +392,9 @@ export default function MentorFeedbackClient() {
           event: '*',
           schema: 'public',
           table: 'mentor_feedback',
-          filter: `student_id=eq.${studentUserId}`,
         },
         () => {
-          triggerFetch()
+          triggerFetch(true)
         }
       )
       .subscribe()
@@ -328,7 +447,7 @@ export default function MentorFeedbackClient() {
             'Already Connected',
             `You are already connected to ${foundMentor.full_name} (${foundMentor.mentor_code}).`
           )
-          await fetchMentorsAndLinkState()
+          await fetchMentorsAndLinkState(true)
           return
         }
 
@@ -358,7 +477,7 @@ export default function MentorFeedbackClient() {
         'Request Sent',
         `Link request sent to ${foundMentor.full_name} (${foundMentor.mentor_code}). Awaiting mentor approval.`
       )
-      await fetchMentorsAndLinkState()
+      await fetchMentorsAndLinkState(true)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to send link request'
       showToast('Request Failed', msg, 'error')
@@ -372,12 +491,14 @@ export default function MentorFeedbackClient() {
     setUnlinking(true)
 
     try {
-      const { error: delErr } = await supabase
-        .from('mentor_students')
-        .delete()
-        .eq('id', currentLink.id)
+      if (!currentLink.id.startsWith('profile-link-')) {
+        const { error: delErr } = await supabase
+          .from('mentor_students')
+          .delete()
+          .eq('id', currentLink.id)
 
-      if (delErr) throw delErr
+        if (delErr) throw delErr
+      }
 
       await supabase.from('profiles').update({ mentor_id: null }).eq('id', studentUserId)
 
@@ -390,7 +511,8 @@ export default function MentorFeedbackClient() {
         `Disconnected from ${linkedMentor?.full_name || 'mentor'}.`
       )
       setCurrentLink(null)
-      await fetchMentorsAndLinkState()
+      setFeedbackNotes([])
+      await fetchMentorsAndLinkState(true)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to unlink mentor'
       showToast('Unlink Failed', msg, 'error')
@@ -399,93 +521,66 @@ export default function MentorFeedbackClient() {
     }
   }
 
-  // Top button: purely navigates to Project Workspace
   function handleRequestMentorReviewClick() {
     if (goingToWorkspace) return
     setGoingToWorkspace(true)
+
+    if (navResetTimerRef.current) {
+      clearTimeout(navResetTimerRef.current)
+    }
+    navResetTimerRef.current = setTimeout(() => {
+      setGoingToWorkspace(false)
+    }, 2500)
+
     router.push(PROJECT_WORKSPACE_PATH)
   }
 
-  // Bottom button: only sends check-in note
   async function handleBottomSendClick() {
     if (!studentUserId || !currentLink || currentLink.status !== 'accepted' || isSendingNote) {
       return
     }
 
-    const messageText = checkInNote.trim()
-    if (!messageText) return
+    const rawText = checkInNote.trim()
+    if (!rawText) return
 
     setIsSendingNote(true)
 
     try {
-      const payloads: Record<string, unknown>[] = [
-        {
-          student_id: studentUserId,
-          mentor_id: currentLink.mentor_id,
-          project_id: activeProjectId,
-          message: messageText,
-        },
-        {
-          student_id: studentUserId,
-          mentor_id: currentLink.mentor_id,
-          message: messageText,
-        },
-        {
-          student_id: studentUserId,
-          mentor_id: currentLink.mentor_id,
-          content: messageText,
-        },
-        {
-          student_id: studentUserId,
-          mentor_id: currentLink.mentor_id,
-          note: messageText,
-        },
-      ]
+      const scopedPayloadText = `[LINK:${currentLink.mentor_id}|${studentUserId}|${
+        activeProjectId || ''
+      }|STUDENT_TO_MENTOR] ${rawText}`
+      const todayDate = new Date().toISOString().slice(0, 10)
 
-      let savedInFeedbackTable = false
-      let lastErrorMsg = ''
+      const { error: fbErr } = await supabase.from('mentor_feedback').insert({
+        mentor_name: linkedMentor?.full_name || 'Mentor',
+        comment: scopedPayloadText,
+        feedback_text: scopedPayloadText,
+        created_at: todayDate,
+        is_read: false,
+      })
 
-      for (const payload of payloads) {
-        const { error } = await supabase.from('mentor_feedback').insert(payload)
-        if (!error) {
-          savedInFeedbackTable = true
-          break
-        }
-        lastErrorMsg = error.message
-      }
+      if (fbErr) throw fbErr
 
-      if (!savedInFeedbackTable) {
-        const { error: linkErr } = await supabase
+      if (!currentLink.id.startsWith('profile-link-')) {
+        await supabase
           .from('mentor_students')
           .update({
-            check_in_note: messageText,
+            check_in_note: rawText,
             updated_at: new Date().toISOString(),
           })
           .eq('id', currentLink.id)
-
-        if (linkErr) {
-          setFeedbackNotes((prev) => [
-            {
-              id: `local-${Date.now()}`,
-              student_id: studentUserId,
-              mentor_id: currentLink.mentor_id,
-              message: messageText,
-              created_at: new Date().toISOString(),
-            },
-            ...prev,
-          ])
-          setCheckInNote('')
-          showToast(
-            'Added to Feed',
-            lastErrorMsg || 'Note displayed locally; check Supabase table/RLS permissions.'
-          )
-          return
-        }
       }
+
+      await supabase.from('notifications').insert({
+        user_id: currentLink.mentor_id,
+        title: `Check-in from ${studentName}`,
+        message: rawText,
+        is_read: false,
+      })
 
       setCheckInNote('')
       showToast('Sent', 'Your check-in note has been sent to your mentor.')
-      await fetchMentorsAndLinkState()
+      await fetchMentorsAndLinkState(true)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to send update'
       showToast('Send Failed', msg, 'error')
@@ -697,7 +792,7 @@ export default function MentorFeedbackClient() {
         >
           <div className="flex items-center justify-between border-b pb-3 border-inherit">
             <h2 className="font-bold text-sm">
-              Feedback from {linkedMentor ? linkedMentor.full_name : 'Mentor'}
+              Feedback from {isAccepted && linkedMentor ? linkedMentor.full_name : 'Mentor'}
             </h2>
             <span className="text-xs text-slate-400">{feedbackNotes.length} Notes</span>
           </div>
@@ -708,12 +803,12 @@ export default function MentorFeedbackClient() {
             </p>
           ) : feedbackNotes.length === 0 ? (
             <p className="text-xs text-slate-400 py-10 text-center">
-              No feedback entries from {linkedMentor ? linkedMentor.full_name : 'your mentor'} yet.
-              Click <strong className="font-semibold">Request Mentor Review</strong> to open your
-              Project Workspace.
+              {isAccepted && linkedMentor
+                ? `No feedback entries from ${linkedMentor.full_name} yet. Click Request Mentor Review to open your Project Workspace.`
+                : 'Connect with a mentor and wait for approval to receive coaching feedback.'}
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
               {feedbackNotes.map((item) => (
                 <div
                   key={item.id}
@@ -723,15 +818,19 @@ export default function MentorFeedbackClient() {
                       : 'bg-[#fffaf5] border-[#ece0d3]'
                   }`}
                 >
-                  <p className="font-medium">
-                    {firstNonEmpty(item.message, item.content, item.feedback, item.note) ||
-                      'Check-in note'}
-                  </p>
-                  {item.created_at && (
-                    <p className="text-[11px] text-slate-400">
-                      {new Date(item.created_at).toLocaleString()}
-                    </p>
-                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`font-bold ${
+                        item.isStudentNote ? 'text-sky-500' : 'text-amber-500'
+                      }`}
+                    >
+                      {item.senderLabel}
+                    </span>
+                    {item.createdAt && (
+                      <span className="text-[11px] text-slate-400">{item.createdAt}</span>
+                    )}
+                  </div>
+                  <p className="font-medium">{item.text}</p>
                 </div>
               ))}
             </div>

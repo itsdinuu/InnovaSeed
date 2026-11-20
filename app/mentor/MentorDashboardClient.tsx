@@ -13,6 +13,8 @@ type MenteeProjectOverview = {
   projectId: string | null
   projectTitle: string
   projectStage: string
+  approvalStatus: string
+  progressPercentage: number
   teamName: string | null
   teamLeadName: string | null
 }
@@ -197,7 +199,11 @@ export default function MentorDashboardClient() {
             const mName = firstNonEmpty(mem.name)
             return mName && mName.toLowerCase() === studentName.toLowerCase()
           })
-          const memTeamId = firstNonEmpty(matchedMember?.team_id, matchedProject?.team_id, lnk.team_id)
+          const memTeamId = firstNonEmpty(
+            matchedMember?.team_id,
+            matchedProject?.team_id,
+            lnk.team_id
+          )
           if (memTeamId) {
             matchedTeam = teamById.get(memTeamId)
           }
@@ -221,6 +227,11 @@ export default function MentorDashboardClient() {
             ? studentName
             : null)
 
+        const approvalStatus = String(
+          matchedProject?.approval_status || lnk.approval_status || 'in_progress'
+        ).toLowerCase()
+        const progressPercentage = Number(matchedProject?.progress_percentage ?? 0) || 0
+
         return {
           linkId: String(lnk.id ?? `${studentId}-${Math.random()}`),
           studentId,
@@ -236,6 +247,8 @@ export default function MentorDashboardClient() {
           projectStage:
             firstNonEmpty(matchedProject?.status, matchedProject?.stage, matchedProject?.phase) ||
             'In Progress',
+          approvalStatus,
+          progressPercentage,
           teamName: resolvedTeamName,
           teamLeadName: resolvedTeamLeadName,
         }
@@ -308,6 +321,10 @@ export default function MentorDashboardClient() {
     }
   }, [loadMentorDashboard])
 
+  const readyForReviewCount = menteeProjects.filter(
+    (m) => m.approvalStatus === 'pending_review'
+  ).length
+
   return (
     <div className="space-y-6">
       <div
@@ -319,7 +336,11 @@ export default function MentorDashboardClient() {
       >
         <div>
           <h1 className="text-2xl font-extrabold">Welcome back, {mentorName}! 👋</h1>
-          <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
+          <p
+            className={`text-xs sm:text-sm mt-1 ${
+              isDarkMode ? 'text-slate-400' : 'text-[#534434]'
+            }`}
+          >
             Quick oversight of connected students, their active innovation projects, and review
             shortcuts.
           </p>
@@ -354,9 +375,9 @@ export default function MentorDashboardClient() {
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
           }`}
         >
-          <div className="text-xs font-semibold text-slate-400">Active Student Projects</div>
+          <div className="text-xs font-semibold text-slate-400">Ready for Completion Review</div>
           <div className="text-2xl font-extrabold mt-1 text-emerald-500">
-            {menteeProjects.filter((m) => m.projectTitle !== 'No Active Project Yet').length}
+            {readyForReviewCount}
           </div>
         </div>
       </div>
@@ -373,7 +394,7 @@ export default function MentorDashboardClient() {
               href="/mentor/evaluation"
               className="text-xs font-bold text-amber-500 hover:underline"
             >
-              Open Evaluation &amp; Feedback &rarr;
+              Open Grading &amp; Rubrics &rarr;
             </Link>
           </div>
         </div>
@@ -396,12 +417,18 @@ export default function MentorDashboardClient() {
               const targetHref = `/mentor/evaluation?studentId=${encodeURIComponent(
                 item.studentId
               )}${item.projectId ? `&projectId=${encodeURIComponent(item.projectId)}` : ''}`
+              const isReadyForReview = item.approvalStatus === 'pending_review'
+              const isApproved = item.approvalStatus === 'approved'
 
               return (
                 <div
                   key={item.linkId}
                   className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border transition ${
-                    isDarkMode
+                    isReadyForReview
+                      ? isDarkMode
+                        ? 'bg-emerald-500/10 border-emerald-500/40'
+                        : 'bg-emerald-50/70 border-emerald-500/40'
+                      : isDarkMode
                       ? 'bg-slate-800/50 border-slate-700/60'
                       : 'bg-[#fff8f4] border-[#ebdcd0]'
                   }`}
@@ -418,22 +445,38 @@ export default function MentorDashboardClient() {
                       >
                         {item.status}
                       </span>
+                      {isReadyForReview && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-slate-950">
+                          Completed Project • Ready for Review
+                        </span>
+                      )}
+                      {isApproved && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/15 text-sky-600">
+                          Approved &amp; Portfolio Unlocked
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs font-semibold text-amber-600">
-                      Project: {item.projectTitle}
+                      Project: {item.projectTitle} ({item.progressPercentage}%)
                     </p>
                     <p className="text-[11px] text-slate-400">
                       {item.teamName
-                        ? `Team: ${item.teamName} • Lead: ${item.teamLeadName || item.studentName}`
+                        ? `Team: ${item.teamName} • Lead: ${
+                            item.teamLeadName || item.studentName
+                          }`
                         : `Student Lead: ${item.studentName} • Stage: ${item.projectStage}`}
                     </p>
                   </div>
 
                   <Link
                     href={targetHref}
-                    className="px-3.5 py-2 rounded-xl bg-[#F59E0B] hover:bg-[#D97706] text-[#0F172A] font-bold text-xs transition self-start sm:self-center shrink-0"
+                    className={`px-3.5 py-2 rounded-xl font-bold text-xs transition self-start sm:self-center shrink-0 ${
+                      isReadyForReview
+                        ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'
+                        : 'bg-[#F59E0B] hover:bg-[#D97706] text-[#0F172A]'
+                    }`}
                   >
-                    Review &amp; Message
+                    {isReadyForReview ? 'Approve & Open Grading Rubric' : 'Open Grading Rubric'}
                   </Link>
                 </div>
               )
@@ -458,7 +501,7 @@ export default function MentorDashboardClient() {
             href="/mentor/evaluation"
             className="text-xs font-bold text-amber-500 hover:underline"
           >
-            Reply in Evaluation &rarr;
+            Open Grading &amp; Rubrics &rarr;
           </Link>
         </div>
 
@@ -468,8 +511,8 @@ export default function MentorDashboardClient() {
           </p>
         ) : recentMessages.length === 0 ? (
           <p className="text-xs text-slate-400 py-6 text-center">
-            No student check-in notes yet. Messages sent by your students from Mentor Feedback will
-            appear here in real time.
+            No student check-in notes yet. Messages sent by your students will appear here in real
+            time.
           </p>
         ) : (
           <div className="grid gap-2.5">
@@ -505,7 +548,7 @@ export default function MentorDashboardClient() {
                     href={replyHref}
                     className="px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-600 hover:bg-amber-500/10 font-bold text-[11px] transition self-start sm:self-center shrink-0"
                   >
-                    Reply
+                    Open Rubric
                   </Link>
                 </div>
               )
