@@ -131,34 +131,29 @@ export default function PortfolioPage() {
     }
 
     const userId = session.user.id
+    const userEmail = (session.user.email || '').trim().toLowerCase()
     setCurrentUserId(userId)
 
     const authFullName =
       typeof session.user.user_metadata?.full_name === 'string' &&
       session.user.user_metadata.full_name.trim()
         ? session.user.user_metadata.full_name.trim()
-        : typeof session.user.email === 'string'
-        ? session.user.email.split('@')[0]
+        : userEmail
+        ? userEmail.split('@')[0]
         : 'Lead'
 
     const [
-      { data: memberRow },
       { data: teamsData },
       { data: allTeamMembers },
       { data: profilesData },
       { data: ideasData },
-      { data: milestonesData },
+      { data: projectTasksData },
     ] = await Promise.all([
-      supabase
-        .from('team_members')
-        .select('team_id, name, user_id, role, teams(*)')
-        .eq('user_id', userId)
-        .maybeSingle(),
       supabase.from('teams').select('*'),
       supabase.from('team_members').select('*'),
-      supabase.from('profiles').select('id, full_name, name'),
+      supabase.from('profiles').select('*'),
       supabase.from('ideas').select('*'),
-      supabase.from('milestones').select('*'),
+      supabase.from('project_tasks').select('*').order('id', { ascending: true }),
     ])
 
     const profileNameById = new Map<string, string>()
@@ -188,61 +183,83 @@ export default function PortfolioPage() {
       }
     }
 
-    const milestonesList: Record<string, unknown>[] = (
-      Array.isArray(milestonesData) ? milestonesData : []
-    ).map((m) => (m || {}) as Record<string, unknown>)
+    // Ambil timeline progress dari tabel project_tasks (fleksibel untuk project_id, project_code, atau team_id)
+    const tasksList: Record<string, unknown>[] = (
+      Array.isArray(projectTasksData) ? projectTasksData : []
+    ).map((t) => (t || {}) as Record<string, unknown>)
 
-    const milestonesByProjectId = new Map<string, TimelineStep[]>()
-    for (const ms of milestonesList) {
-      const pId = ms.project_id !== undefined && ms.project_id !== null ? String(ms.project_id) : ''
-      if (!pId) continue
-      const list = milestonesByProjectId.get(pId) || []
-      list.push({
-        title: String(ms.title || ms.name || 'Workspace Milestone'),
-        status: String(ms.status || (ms.is_completed ? 'Completed' : 'In Progress')),
-        due_date: typeof ms.due_date === 'string' ? ms.due_date : null,
-      })
-      milestonesByProjectId.set(pId, list)
+    const tasksByKey = new Map<string, TimelineStep[]>()
+    for (const task of tasksList) {
+      const keys = [
+        task.project_id !== undefined && task.project_id !== null ? `id:${task.project_id}` : '',
+        typeof task.project_code === 'string' && task.project_code.trim()
+          ? `code:${task.project_code.trim()}`
+          : '',
+        task.team_id !== undefined && task.team_id !== null ? `team:${task.team_id}` : '',
+      ].filter(Boolean)
+
+      if (keys.length === 0) continue
+
+      const rawStatus = String(
+        task.status || (task.is_completed ? 'Completed' : 'In Progress')
+      )
+      const stepItem: TimelineStep = {
+        title: String(task.title || task.task_name || task.name || 'Workspace Task'),
+        status:
+          rawStatus.toLowerCase() === 'done' || rawStatus.toLowerCase() === 'completed'
+            ? 'Completed'
+            : rawStatus,
+        due_date: typeof task.due_date === 'string' ? task.due_date : null,
+      }
+
+      for (const k of keys) {
+        const list = tasksByKey.get(k) || []
+        list.push(stepItem)
+        tasksByKey.set(k, list)
+      }
     }
 
     const teamsArr: Record<string, unknown>[] = (
       Array.isArray(teamsData) ? teamsData : []
     ).map((t) => (t || {}) as Record<string, unknown>)
 
-    const memberRec = (memberRow || {}) as Record<string, unknown>
-    const rawTeamsRel = memberRec.teams
-    const teamRelRaw = (
-      Array.isArray(rawTeamsRel) ? rawTeamsRel[0] : rawTeamsRel
-    ) as Record<string, unknown> | null | undefined
+    const allMembersArr: Record<string, unknown>[] = (
+      Array.isArray(allTeamMembers) ? allTeamMembers : []
+    ).map((m) => (m || {}) as Record<string, unknown>)
 
-    const resolvedTeamId = memberRec.team_id
-      ? String(memberRec.team_id)
-      : teamRelRaw?.id
-      ? String(teamRelRaw.id)
-      : (() => {
-          const leadTeam = teamsArr.find((t) => {
-            const lead = t.lead_id ?? t.leader_id ?? t.user_id ?? t.student_id
-            return lead && String(lead) === userId
-          })
-          return leadTeam?.id ? String(leadTeam.id) : null
-        })()
+    const profileSelfName = profileNameById.get(userId) || authFullName
 
-    setCurrentTeamId(resolvedTeamId)
+    // Cari keanggotaan user di team_members secara fleksibel (id / email / nama)
+    const matchedMemberRow = allMembersArr.find((m) => {
+      const mUid = String(m.user_id ?? m.student_id ?? m.member_id ?? m.profile_id ?? '')
+      const mEmail = typeof m.email === 'string' ? m.email.trim().toLowerCase() : ''
+      const mName = typeof m.name === 'string' ? m.name.trim().toLowerCase() : ''
+      return (
+        (mUid && mUid === userId) ||
+        (userEmail && mEmail && mEmail === userEmail) ||
+        (profileSelfName && mName && mName === profileSelfName.toLowerCase())
+      )
+    })
 
     const matchedTeam: Record<string, unknown> | null =
-      teamsArr.find((t) => resolvedTeamId && String(t.id) === resolvedTeamId) ||
-      teamRelRaw ||
+      (matchedMemberRow?.team_id
+        ? teamsArr.find((t) => String(t.id) === String(matchedMemberRow.team_id))
+        : null) ||
+      teamsArr.find((t) => {
+        const lead = String(t.lead_id ?? t.leader_id ?? t.user_id ?? t.student_id ?? '')
+        return lead && lead === userId
+      }) ||
+      teamsArr[0] ||
       null
+
+    const resolvedTeamId = matchedTeam?.id ? String(matchedTeam.id) : null
+    setCurrentTeamId(resolvedTeamId)
 
     const resolvedTeamName: string = String(
       (typeof matchedTeam?.team_name === 'string' && matchedTeam.team_name.trim()) ||
         (typeof matchedTeam?.name === 'string' && matchedTeam.name.trim()) ||
         'Innovation Team'
     )
-
-    const allMembersArr: Record<string, unknown>[] = (
-      Array.isArray(allTeamMembers) ? allTeamMembers : []
-    ).map((m) => (m || {}) as Record<string, unknown>)
 
     const sameTeamMembers = resolvedTeamId
       ? allMembersArr.filter((m) => m.team_id && String(m.team_id) === resolvedTeamId)
@@ -257,19 +274,19 @@ export default function PortfolioPage() {
       matchedTeam?.lead_id ??
       matchedTeam?.leader_id ??
       matchedTeam?.user_id ??
+      matchedTeam?.student_id ??
       leaderMember?.user_id ??
+      leaderMember?.student_id ??
       null
 
     const profileLeadName = teamLeadId ? profileNameById.get(String(teamLeadId)) : undefined
-    const profileSelfName = profileNameById.get(userId)
 
     const resolvedLeadName: string = String(
       (typeof matchedTeam?.lead_name === 'string' && matchedTeam.lead_name.trim()) ||
         (typeof leaderMember?.name === 'string' && leaderMember.name.trim()) ||
         profileLeadName ||
-        (typeof memberRec.name === 'string' && memberRec.name.trim()) ||
-        profileSelfName ||
-        authFullName
+        (typeof matchedMemberRow?.name === 'string' && matchedMemberRow.name.trim()) ||
+        profileSelfName
     )
 
     setCurrentTeamName(resolvedTeamName)
@@ -282,14 +299,15 @@ export default function PortfolioPage() {
     const allowedTokens = new Set<string>([
       resolvedLeadName.toLowerCase(),
       resolvedTeamName.toLowerCase(),
-      authFullName.toLowerCase(),
+      profileSelfName.toLowerCase(),
     ])
 
     let memberCount = 1
     if (sameTeamMembers.length > 0) {
       memberCount = sameTeamMembers.length
       for (const m of sameTeamMembers) {
-        if (m.user_id) allowedIds.add(String(m.user_id))
+        const mUid = String(m.user_id ?? m.student_id ?? m.member_id ?? m.profile_id ?? '')
+        if (mUid) allowedIds.add(mUid)
         if (typeof m.name === 'string' && m.name.trim()) {
           allowedTokens.add(m.name.trim().toLowerCase())
         }
@@ -356,10 +374,13 @@ export default function PortfolioPage() {
             ? `approved-${rawId}`
             : `approved-${idx}`
 
-        const projectMilestones =
-          rawId !== undefined && rawId !== null
-            ? milestonesByProjectId.get(String(rawId)) || []
-            : []
+        const projectTasks =
+          (rawId !== undefined && rawId !== null && tasksByKey.get(`id:${rawId}`)) ||
+          (typeof proj.project_code === 'string' &&
+            proj.project_code.trim() &&
+            tasksByKey.get(`code:${proj.project_code.trim()}`)) ||
+          (resolvedTeamId && tasksByKey.get(`team:${resolvedTeamId}`)) ||
+          []
 
         const overviewText = String(
           proj.subtitle ||
@@ -396,7 +417,7 @@ export default function PortfolioPage() {
           materials_and_tech:
             rawMaterials.length > 0 ? rawMaterials : ['Project Materials & Prototype Kit'],
           timeline_steps:
-            projectMilestones.length > 0 ? projectMilestones : DEFAULT_WORKSPACE_FLOW,
+            projectTasks.length > 0 ? projectTasks : DEFAULT_WORKSPACE_FLOW,
           lead_name: resolvedLeadName,
           team_name: resolvedTeamName,
           demo_url:
@@ -495,7 +516,7 @@ export default function PortfolioPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ideas' }, () => {
         if (isMounted) void loadTeamPortfolio()
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'milestones' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tasks' }, () => {
         if (isMounted) void loadTeamPortfolio()
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, () => {
