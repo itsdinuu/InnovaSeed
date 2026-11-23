@@ -1,397 +1,540 @@
 "use client"
 
-import { useEffect, useState, useCallback } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '@/context/ThemeContext'
+import { supabase } from '@/lib/supabaseClient'
 
-type CompetitionSubmission = {
-  id: number
-  team_name: string
-  pitch_deck_url?: string
-  demo_video_url?: string
-  mentor_directive?: string
-  status?: string
+type CompetitionOption = {
+  id: string
+  title: string
 }
 
-type ChecklistItem = {
-  id: number
-  team_name: string
-  task_title: string
-  is_completed: boolean
+type ChecklistRecord = {
+  id: string
+  competitionId: string
+  competitionTitle: string
+  title: string
+  category: string
+  dueDate?: string | null
+  instructions?: string | null
+  isCompleted: boolean
 }
+
+const LS_PREP_ITEMS = 'innovaseed_prep_items_v2'
+
+const DEFAULT_COMPETITIONS: CompetitionOption[] = [
+  { id: 'comp-1', title: 'NYIA (National Young Inventors Award)' },
+  { id: 'comp-2', title: 'National Science Fair (NSF) 2026' },
+  { id: 'comp-3', title: 'Indonesian Youth Science Association (IYSA) Expo' },
+  { id: 'comp-4', title: 'Invention & Young Innovators Challenge' },
+]
+
+const MENTORSHIP_STAGES = [
+  'Idea',
+  'Research',
+  'Prototype',
+  'Presentation',
+  'Pitching',
+] as const
 
 export default function MentorCompetitionControlPage() {
   const { isDarkMode } = useTheme()
-  const [submissions, setSubmissions] = useState<CompetitionSubmission[]>([])
-  const [checklists, setChecklists] = useState<ChecklistItem[]>([])
-  const [loading, setLoading] = useState(true)
 
-  // State modal edit directive
-  const [selectedSub, setSelectedSub] = useState<CompetitionSubmission | null>(null)
-  const [directiveText, setDirectiveText] = useState('')
-  
-  // State modal tambah checklist task
-  const [selectedTeamForTask, setSelectedTeamForTask] = useState<string | null>(null)
-  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [mentorName, setMentorName] = useState<string>('Mentor')
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [competitionOptions, setCompetitionOptions] =
+    useState<CompetitionOption[]>(DEFAULT_COMPETITIONS)
+  const [checklistItems, setChecklistItems] = useState<ChecklistRecord[]>([])
 
-  const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
+  // Form states for assigning a new preparation checklist item
+  const [selectedCompId, setSelectedCompId] = useState<string>(DEFAULT_COMPETITIONS[0].id)
+  const [taskTitle, setTaskTitle] = useState<string>('')
+  const [taskCategory, setTaskCategory] = useState<string>(MENTORSHIP_STAGES[0])
+  const [taskDueDate, setTaskDueDate] = useState<string>('')
+  const [taskNotes, setTaskNotes] = useState<string>('')
+  const [isSubmittingTask, setIsSubmittingTask] = useState<boolean>(false)
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    
-    const { data: compData } = await supabase
-      .from('competition_prep')
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const notify = useCallback((msg: string) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(null), 4000)
+  }, [])
+
+  const loadMentorControlData = useCallback(async () => {
+    setIsLoading(true)
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    let resolvedMentor =
+      typeof session?.user?.user_metadata?.full_name === 'string' &&
+      session.user.user_metadata.full_name.trim()
+        ? session.user.user_metadata.full_name.trim()
+        : session?.user?.email
+        ? session.user.email.split('@')[0]
+        : 'Mentor'
+
+    if (session?.user?.id) {
+      const { data: profileRow } = await supabase
+        .from('profiles')
+        .select('full_name, name')
+        .eq('id', session.user.id)
+        .maybeSingle()
+
+      if (profileRow) {
+        const p = profileRow as Record<string, unknown>
+        if (typeof p.full_name === 'string' && p.full_name.trim()) {
+          resolvedMentor = p.full_name.trim()
+        } else if (typeof p.name === 'string' && p.name.trim()) {
+          resolvedMentor = p.name.trim()
+        }
+      }
+    }
+    setMentorName(resolvedMentor)
+
+    // 1. Load target competition options from Supabase `competitions`
+    const { data: compRows, error: compErr } = await supabase
+      .from('competitions')
+      .select('id, title')
+
+    let activeOptions = DEFAULT_COMPETITIONS
+    if (!compErr && Array.isArray(compRows) && compRows.length > 0) {
+      activeOptions = compRows.map((raw, idx) => {
+        const r = (raw || {}) as Record<string, unknown>
+        return {
+          id: r.id !== undefined && r.id !== null ? String(r.id) : `comp-${idx}`,
+          title:
+            typeof r.title === 'string' && r.title.trim()
+              ? r.title.trim()
+              : 'Untitled Competition',
+        }
+      })
+    }
+    setCompetitionOptions(activeOptions)
+    setSelectedCompId((prev) =>
+      activeOptions.some((c) => c.id === prev) ? prev : activeOptions[0]?.id || ''
+    )
+
+    // 2. Load assigned preparation checklists
+    const itemsList: ChecklistRecord[] = []
+    const { data: dbPrep, error: prepErr } = await supabase
+      .from('competition_prep_materials')
       .select('*')
-      .order('id', { ascending: false })
 
-    const { data: checkData } = await supabase
-      .from('competition_checklists')
-      .select('*')
-      .order('id', { ascending: true })
+    if (!prepErr && Array.isArray(dbPrep) && dbPrep.length > 0) {
+      for (let i = 0; i < dbPrep.length; i++) {
+        const r = (dbPrep[i] || {}) as Record<string, unknown>
+        const stRaw = String(r.status || '').toLowerCase()
+        itemsList.push({
+          id: r.id ? String(r.id) : `db-prep-${i}`,
+          competitionId: String(r.competition_id || ''),
+          competitionTitle: String(
+            r.competition_title || r.competition_name || 'Target Competition'
+          ),
+          title: String(r.title || r.material_title || 'Preparation Deliverable'),
+          category: String(r.category || r.track || MENTORSHIP_STAGES[0]),
+          dueDate: r.due_date ? String(r.due_date) : null,
+          instructions: r.notes || r.description ? String(r.notes || r.description) : null,
+          isCompleted:
+            Boolean(r.is_completed) || stRaw === 'completed' || stRaw === 'done',
+        })
+      }
+    } else {
+      try {
+        const rawPrep = localStorage.getItem(LS_PREP_ITEMS)
+        if (rawPrep) {
+          const parsedPrep = JSON.parse(rawPrep) as Record<string, unknown>[]
+          if (Array.isArray(parsedPrep)) {
+            parsedPrep.forEach((r, idx) => {
+              const stRaw = String(r.status || '').toLowerCase()
+              itemsList.push({
+                id: r.id ? String(r.id) : `ls-prep-${idx}`,
+                competitionId: String(r.competitionId || r.competition_id || ''),
+                competitionTitle: String(
+                  r.competitionTitle || r.competition_title || 'Target Competition'
+                ),
+                title: String(r.title || 'Preparation Deliverable'),
+                category: String(r.category || MENTORSHIP_STAGES[0]),
+                dueDate: r.dueDate ? String(r.dueDate) : null,
+                instructions: r.notes ? String(r.notes) : null,
+                isCompleted:
+                  Boolean(r.isCompleted) || stRaw === 'completed' || stRaw === 'done',
+              })
+            })
+          }
+        }
+      } catch {
+        // Ignore storage error
+      }
+    }
 
-    if (compData) setSubmissions(compData)
-    if (checkData) setChecklists(checkData)
-    
-    setLoading(false)
+    setChecklistItems(itemsList)
+    setIsLoading(false)
   }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void fetchData()
-    }, 0)
+    let active = true
 
-    const channel = supabase
-      .channel('realtime-mentor-competition-control')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'competition_prep' },
-        () => fetchData()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'competition_checklists' },
-        () => fetchData()
-      )
-      .subscribe()
+    queueMicrotask(() => {
+      if (active) {
+        void loadMentorControlData()
+      }
+    })
 
     return () => {
-      clearTimeout(timer)
-      supabase.removeChannel(channel)
+      active = false
     }
-  }, [fetchData])
+  }, [loadMentorControlData])
 
-  function handleOpenDirectiveModal(item: CompetitionSubmission) {
-    setSelectedSub(item)
-    setDirectiveText(item.mentor_directive || '')
-  }
-
-  async function handleSaveDirective(e: React.FormEvent) {
+  const handleAddChecklistItem = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedSub) return
-    setSaving(true)
+    if (!taskTitle.trim()) return
 
-    const { error } = await supabase
-      .from('competition_prep')
-      .update({
-        mentor_directive: directiveText,
-        status: 'Directive Updated by Mentor'
-      })
-      .eq('id', selectedSub.id)
+    const matchedComp =
+      competitionOptions.find((c) => c.id === selectedCompId) || competitionOptions[0]
 
-    if (!error) {
-      setToast('Mentor directive successfully published!')
-      setSelectedSub(null)
-      fetchData()
-      setTimeout(() => setToast(null), 4000)
-    } else {
-      alert('Error updating directive: ' + error.message)
+    const compId = matchedComp ? matchedComp.id : selectedCompId || 'general'
+    const compTitle = matchedComp ? matchedComp.title : 'Assigned Competition'
+
+    setIsSubmittingTask(true)
+
+    const newItem: ChecklistRecord = {
+      id: `ls-prep-${Date.now()}`,
+      competitionId: compId,
+      competitionTitle: compTitle,
+      title: taskTitle.trim(),
+      category: taskCategory,
+      dueDate: taskDueDate || null,
+      instructions: taskNotes.trim() || null,
+      isCompleted: false,
     }
-    setSaving(false)
+
+    const { data: insertedRows, error: insertErr } = await supabase
+      .from('competition_prep_materials')
+      .insert([
+        {
+          competition_id: compId,
+          competition_title: compTitle,
+          title: newItem.title,
+          category: newItem.category,
+          due_date: newItem.dueDate,
+          notes: newItem.instructions,
+          status: 'todo',
+        },
+      ])
+      .select()
+
+    if (!insertErr && Array.isArray(insertedRows) && insertedRows[0]?.id) {
+      newItem.id = String(insertedRows[0].id)
+    }
+
+    const updatedItems = [newItem, ...checklistItems]
+    setChecklistItems(updatedItems)
+
+    try {
+      localStorage.setItem(
+        LS_PREP_ITEMS,
+        JSON.stringify(
+          updatedItems.map((it) => ({
+            ...it,
+            status: it.isCompleted ? 'completed' : 'todo',
+          }))
+        )
+      )
+    } catch {
+      // Ignore storage error
+    }
+
+    setTaskTitle('')
+    setTaskDueDate('')
+    setTaskNotes('')
+    setIsSubmittingTask(false)
+    notify(`Assigned checklist "${newItem.title}" for ${compTitle}!`)
   }
 
-  async function handleAddTask(e: React.FormEvent) {
-    e.preventDefault()
-    if (!selectedTeamForTask || !newTaskTitle.trim()) return
-    setSaving(true)
+  const handleDeleteChecklistItem = async (item: ChecklistRecord) => {
+    const filtered = checklistItems.filter((c) => c.id !== item.id)
+    setChecklistItems(filtered)
 
-    const { error } = await supabase
-      .from('competition_checklists')
-      .insert([{
-        team_name: selectedTeamForTask,
-        task_title: newTaskTitle.trim(),
-        is_completed: false
-      }])
-
-    if (!error) {
-      setToast('New checklist task added successfully!')
-      setSelectedTeamForTask(null)
-      setNewTaskTitle('')
-      fetchData()
-      setTimeout(() => setToast(null), 4000)
-    } else {
-      alert('Error adding task: ' + error.message)
+    try {
+      localStorage.setItem(
+        LS_PREP_ITEMS,
+        JSON.stringify(
+          filtered.map((it) => ({
+            ...it,
+            status: it.isCompleted ? 'completed' : 'todo',
+          }))
+        )
+      )
+    } catch {
+      // Ignore storage error
     }
-    setSaving(false)
+
+    if (!item.id.startsWith('ls-prep-') && !item.id.startsWith('db-prep-')) {
+      await supabase.from('competition_prep_materials').delete().eq('id', item.id)
+    }
+
+    notify(`Removed checklist item "${item.title}".`)
   }
 
-  async function handleDeleteTask(taskId: number) {
-    const { error } = await supabase
-      .from('competition_checklists')
-      .delete()
-      .eq('id', taskId)
-
-    if (!error) {
-      fetchData()
-    } else {
-      alert('Error deleting task: ' + error.message)
-    }
-  }
-
-  async function handleFinalSignOff(id: number) {
-    if (!confirm('Are you sure you want to give final sign-off for this team?')) return
-
-    const { error } = await supabase
-      .from('competition_prep')
-      .update({ status: 'Approved / Ready for Competition' })
-      .eq('id', id)
-
-    if (!error) {
-      setToast('Final sign-off granted!')
-      fetchData()
-      setTimeout(() => setToast(null), 4000)
-    } else {
-      alert('Error: ' + error.message)
-    }
-  }
+  const completedCount = checklistItems.filter((i) => i.isCompleted).length
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto relative">
-      <div>
-        <h1 className="text-2xl font-extrabold flex items-center gap-2">
-          <i className="fa-solid fa-trophy text-amber-500"></i> Faculty Competition Control Panel 🎯
-        </h1>
-        <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-          Monitor team deliverables, manage dynamic milestones/checklists, issue directives, and grant final sign-offs.
-        </p>
-      </div>
+    <div className="w-full max-w-full overflow-x-hidden space-y-6">
+      {toastMessage && (
+        <div className="fixed top-20 right-5 z-50 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs font-bold text-emerald-600 shadow-xl backdrop-blur-md">
+          {toastMessage}
+        </div>
+      )}
 
-      {loading ? (
-        <div className="text-center py-16 text-slate-500 animate-pulse text-xs">Loading competition control data...</div>
-      ) : submissions.length === 0 ? (
-        <div className={`border rounded-2xl p-12 text-center shadow-xs space-y-3 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'}`}>
-          <div className="w-12 h-12 bg-amber-500/10 text-amber-600 rounded-xl grid place-items-center mx-auto text-lg">
-            <i className="fa-solid fa-trophy"></i>
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-amber-500">
+            <span>
+              <i className="fa-solid fa-sliders mr-1"></i> Mentor Competition Control
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] tracking-normal normal-case bg-amber-500/15 text-amber-600 border border-amber-500/30">
+              {mentorName} • Mentor Supervisor
+            </span>
           </div>
-          <h3 className="font-bold">No Competition Entries Yet</h3>
-          <p className={`text-xs max-w-sm mx-auto ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>
-            Student teams have not submitted their competition deliverables.
+          <h1 className="text-2xl font-extrabold tracking-tight mt-1 wrap-break-words">
+            Competition Prep Checklist Control
+          </h1>
+          <p
+            className={`text-xs mt-1 leading-relaxed wrap-break-words ${
+              isDarkMode ? 'text-slate-400' : 'text-[#534434]'
+            }`}
+          >
+            Assign and manage preparation deliverables across Idea → Research → Prototype →
+            Presentation → Pitching that sync to the student Competition Prep page.
           </p>
         </div>
-      ) : (
-        <div className="grid gap-6">
-          {submissions.map((item) => {
-            const teamTasks = checklists.filter(c => c.team_name === item.team_name)
 
-            return (
-              <div 
-                key={item.id} 
-                className={`border rounded-2xl p-6 shadow-xs space-y-5 transition-colors ${
-                  isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-[#d8c3ad]'
+        {/* Summary Counters */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div
+            className={`px-3.5 py-2 rounded-2xl border text-xs font-bold ${
+              isDarkMode
+                ? 'bg-slate-900 border-slate-800 text-amber-400'
+                : 'bg-white border-[#d8c3ad] text-amber-600'
+            }`}
+          >
+            Total Checklists: <b>{checklistItems.length}</b>
+          </div>
+          <div
+            className={`px-3.5 py-2 rounded-2xl border text-xs font-bold ${
+              isDarkMode
+                ? 'bg-slate-900 border-slate-800 text-emerald-400'
+                : 'bg-white border-[#d8c3ad] text-emerald-600'
+            }`}
+          >
+            Completed: <b>{completedCount}</b>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid: Left = Assign Checklist Form, Right = Assigned Checklists */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        {/* Left Column: Assign Checklist Form (5 Cols) */}
+        <div
+          className={`xl:col-span-5 rounded-2xl border p-5 sm:p-6 shadow-sm space-y-5 ${
+            isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
+          }`}
+        >
+          <div className="border-b pb-3 border-inherit">
+            <h2 className="text-sm font-extrabold flex items-center gap-2">
+              <i className="fa-solid fa-list-check text-amber-500"></i> Assign Prep Checklist
+            </h2>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Create checklist items that appear live in the student&apos;s Competition Prep
+              page.
+            </p>
+          </div>
+
+          <form onSubmit={(e) => void handleAddChecklistItem(e)} className="space-y-3 text-xs">
+            <div>
+              <label className="block font-bold mb-1">Target Competition</label>
+              <select
+                value={selectedCompId}
+                onChange={(e) => setSelectedCompId(e.target.value)}
+                disabled={competitionOptions.length === 0}
+                className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-slate-100'
+                    : 'bg-[#fffcf9] border-[#d8c3ad] text-[#221a12]'
                 }`}
               >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4 border-inherit">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md uppercase tracking-wider ${
-                        item.status === 'Approved / Ready for Competition' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' :
-                        'bg-amber-500/10 text-amber-600 border border-amber-500/30'
-                      }`}>
-                        {item.status || 'Pending Submission'}
+                {competitionOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold mb-1">Checklist Deliverable Title</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g., Problem Statement & Novelty Matrix"
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-slate-100'
+                    : 'bg-[#fffcf9] border-[#d8c3ad] text-[#221a12]'
+                }`}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block font-bold mb-1">Mentorship Stage</label>
+                <select
+                  value={taskCategory}
+                  onChange={(e) => setTaskCategory(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                    isDarkMode
+                      ? 'bg-slate-800 border-slate-700 text-slate-100'
+                      : 'bg-[#fffcf9] border-[#d8c3ad] text-[#221a12]'
+                  }`}
+                >
+                  {MENTORSHIP_STAGES.map((stage) => (
+                    <option key={stage} value={stage}>
+                      {stage}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">Due Date (Optional)</label>
+                <input
+                  type="date"
+                  value={taskDueDate}
+                  onChange={(e) => setTaskDueDate(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                    isDarkMode
+                      ? 'bg-slate-800 border-slate-700 text-slate-100'
+                      : 'bg-[#fffcf9] border-[#d8c3ad] text-[#221a12]'
+                  }`}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold mb-1">Mentor Instructions</label>
+              <textarea
+                rows={2}
+                placeholder="Write brief guidance for the preparation stage..."
+                value={taskNotes}
+                onChange={(e) => setTaskNotes(e.target.value)}
+                className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-slate-100'
+                    : 'bg-[#fffcf9] border-[#d8c3ad] text-[#221a12]'
+                }`}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmittingTask || competitionOptions.length === 0}
+              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 text-slate-950 font-extrabold text-xs hover:bg-amber-400 disabled:opacity-50 transition cursor-pointer shadow-sm"
+            >
+              {isSubmittingTask ? 'Assigning...' : '+ Add to Student Prep Checklist'}
+            </button>
+          </form>
+        </div>
+
+        {/* Right Column: Assigned Checklists List (7 Cols) */}
+        <div
+          className={`xl:col-span-7 rounded-2xl border p-5 sm:p-6 shadow-sm space-y-4 ${
+            isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3 border-inherit">
+            <h2 className="text-sm font-extrabold flex items-center gap-2">
+              <i className="fa-solid fa-clipboard-list text-amber-500"></i> Assigned
+              Checklists ({checklistItems.length})
+            </h2>
+            <span className="text-[11px] text-slate-400">
+              Idea → Research → Prototype → Presentation → Pitching
+            </span>
+          </div>
+
+          {isLoading ? (
+            <div className="py-10 text-center text-xs text-slate-400">
+              Loading preparation checklists...
+            </div>
+          ) : checklistItems.length === 0 ? (
+            <div className="py-10 text-center text-xs text-slate-400 space-y-1">
+              <p className="font-bold">No checklist items assigned yet.</p>
+              <p>
+                Use the form on the left to add preparation deliverables for competitions.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {checklistItems.map((item) => (
+                <div
+                  key={item.id}
+                  className={`rounded-xl border p-4 flex items-start justify-between gap-3 ${
+                    isDarkMode
+                      ? 'bg-slate-800/60 border-slate-700'
+                      : 'bg-[#fffcf9] border-[#d8c3ad]'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                        {item.category}
                       </span>
-                      <h3 className="font-bold text-base">{item.team_name}</h3>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button 
-                      type="button"
-                      onClick={() => handleOpenDirectiveModal(item)}
-                      className="px-3.5 py-2 text-xs font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer"
-                    >
-                      <i className="fa-solid fa-pen-to-square mr-1"></i> Edit Directive
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => handleFinalSignOff(item.id)}
-                      className="px-3.5 py-2 text-xs font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 rounded-xl hover:bg-emerald-500/20 transition cursor-pointer"
-                    >
-                      <i className="fa-solid fa-check-circle mr-1"></i> Final Sign-Off
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4 text-xs">
-                  <div className="space-y-2">
-                    <div>
-                      <span className={`block font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Pitch Deck Asset:</span>
-                      {item.pitch_deck_url ? (
-                        <a href={item.pitch_deck_url} target="_blank" rel="noreferrer" className="text-amber-500 hover:underline truncate block font-medium">
-                          <i className="fa-solid fa-link mr-1"></i> {item.pitch_deck_url}
-                        </a>
-                      ) : (
-                        <span className="text-slate-400 italic">Not uploaded yet</span>
-                      )}
-                    </div>
-                    <div>
-                      <span className={`block font-semibold ${isDarkMode ? 'text-slate-400' : 'text-[#534434]'}`}>Demo Video Asset:</span>
-                      {item.demo_video_url ? (
-                        <a href={item.demo_video_url} target="_blank" rel="noreferrer" className="text-amber-500 hover:underline truncate block font-medium">
-                          <i className="fa-solid fa-link mr-1"></i> {item.demo_video_url}
-                        </a>
-                      ) : (
-                        <span className="text-slate-400 italic">Not uploaded yet</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className={`p-3.5 rounded-xl border flex flex-col justify-between ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-amber-50/50 border-amber-200'}`}>
-                    <div>
-                      <span className="font-bold block mb-1 text-amber-500">Current Mentor Directive:</span>
-                      <p className={isDarkMode ? 'text-slate-300' : 'text-[#534434]'}>
-                        {item.mentor_directive || 'No directive issued yet.'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* MANAJEMEN CHECKLIST SISWA OLEH MENTOR */}
-                <div className="pt-3 border-t border-inherit space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-xs uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
-                      <i className="fa-solid fa-list-check"></i> Team Milestones &amp; Checklist ({teamTasks.filter(t => t.is_completed).length}/{teamTasks.length} Done)
-                    </h4>
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        console.log("Tombol Add Task diklik untuk tim:", item.team_name)
-                        setSelectedTeamForTask(item.team_name)
-                      }}
-                      className="text-[11px] font-bold px-3 py-1.5 bg-amber-500 text-[#0F172A] rounded-lg hover:bg-amber-400 transition cursor-pointer shadow-xs"
-                    >
-                      + Add Task
-                    </button>
-                  </div>
-
-                  <div className="grid sm:grid-cols-2 gap-2">
-                    {teamTasks.map((task) => (
-                      <div 
-                        key={task.id} 
-                        className={`flex items-center justify-between p-2.5 rounded-xl border text-xs ${
-                          task.is_completed 
-                            ? (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800') 
-                            : (isDarkMode ? 'bg-slate-800/40 border-slate-700 text-slate-300' : 'bg-[#fff8f4] border-[#d8c3ad]')
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          item.isCompleted
+                            ? 'bg-emerald-500/15 text-emerald-600'
+                            : 'bg-slate-500/15 text-slate-500'
                         }`}
                       >
-                        <div className="flex items-center gap-2 truncate">
-                          <i className={`fa-solid ${task.is_completed ? 'fa-circle-check text-emerald-500' : 'fa-clock text-amber-500'}`}></i>
-                          <span className={`truncate font-medium ${task.is_completed ? 'line-through opacity-80' : ''}`}>{task.task_title}</span>
-                        </div>
-                        <button 
-                          type="button"
-                          onClick={() => handleDeleteTask(task.id)}
-                          className="text-red-500 hover:text-red-700 ml-2 font-bold px-1.5 py-0.5 cursor-pointer"
-                          title="Delete Task"
-                        >
-                          &times;
-                        </button>
-                      </div>
-                    ))}
-                    {teamTasks.length === 0 && (
-                      <span className="text-xs text-slate-400 italic">No custom checklist tasks assigned yet.</span>
+                        {item.isCompleted ? 'Completed' : 'In Progress'}
+                      </span>
+                      {item.dueDate && (
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          Due {item.dueDate}
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="text-sm font-extrabold wrap-break-words">{item.title}</h3>
+                    <p className="text-[11px] font-semibold text-amber-600 wrap-break-words">
+                      {item.competitionTitle}
+                    </p>
+                    {item.instructions && (
+                      <p className="text-xs text-slate-400 leading-relaxed pt-0.5 wrap-break-words">
+                        {item.instructions}
+                      </p>
                     )}
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteChecklistItem(item)}
+                    className="text-rose-500 hover:text-rose-600 text-xs px-2 py-1 rounded-lg hover:bg-rose-500/10 transition cursor-pointer shrink-0"
+                    title="Delete checklist item"
+                  >
+                    <i className="fa-solid fa-trash-can"></i>
+                  </button>
                 </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* --- MODAL EDIT DIRECTIVE --- */}
-      {selectedSub && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`w-full max-w-lg p-6 rounded-2xl border shadow-2xl space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
-            <div className="flex items-center justify-between border-b pb-3 border-inherit">
-              <h3 className="font-bold text-base">Write Competition Directive 📢</h3>
-              <button type="button" onClick={() => setSelectedSub(null)} className="w-7 h-7 rounded-full bg-slate-500/10 hover:bg-slate-500/20 grid place-items-center text-xs font-bold cursor-pointer">✕</button>
+              ))}
             </div>
-
-            <form onSubmit={handleSaveDirective} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Directive / Instructions for {selectedSub.team_name}</label>
-                <textarea 
-                  rows={5}
-                  required
-                  placeholder="Provide precise guidelines for pitch deck polish or video demo requirements..."
-                  value={directiveText}
-                  onChange={(e) => setDirectiveText(e.target.value)}
-                  className={`w-full rounded-xl px-3.5 py-2.5 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setSelectedSub(null)} className="px-4 py-2 font-bold border border-slate-500/30 rounded-xl hover:bg-slate-500/10 transition cursor-pointer">Cancel</button>
-                <button type="submit" disabled={saving} className="px-5 py-2 font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer disabled:opacity-50">Publish Directive</button>
-              </div>
-            </form>
-          </div>
+          )}
         </div>
-      )}
-
-      {/* --- MODAL TAMBAH TASK CHECKLIST OLEH MENTOR --- */}
-      {selectedTeamForTask && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`w-full max-w-md p-6 rounded-2xl border shadow-2xl space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-[#d8c3ad] text-[#221a12]'}`}>
-            <div className="flex items-center justify-between border-b pb-3 border-inherit">
-              <h3 className="font-bold text-base">Add Checklist Task for {selectedTeamForTask} 📝</h3>
-              <button type="button" onClick={() => setSelectedTeamForTask(null)} className="w-7 h-7 rounded-full bg-slate-500/10 hover:bg-slate-500/20 grid place-items-center text-xs font-bold cursor-pointer">✕</button>
-            </div>
-
-            <form onSubmit={handleAddTask} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Task Title / Milestone</label>
-                <input 
-                  type="text"
-                  required
-                  placeholder="e.g. Upload Market Validation PDF..."
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  className={`w-full rounded-xl px-3.5 py-2.5 outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-[#fff8f4] border-[#d8c3ad]'}`}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setSelectedTeamForTask(null)} className="px-4 py-2 font-bold border border-slate-500/30 rounded-xl hover:bg-slate-500/10 transition cursor-pointer">Cancel</button>
-                <button type="submit" disabled={saving} className="px-5 py-2 font-bold bg-[#F59E0B] text-[#0F172A] rounded-xl hover:bg-[#D97706] transition shadow-sm cursor-pointer disabled:opacity-50">Add Task</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs">
-          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
-            <i className="fa-solid fa-check"></i>
-          </span>
-          <div>
-            <b className="block text-slate-200">Success</b>
-            <p className="text-slate-400">{toast}</p>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   )
 }

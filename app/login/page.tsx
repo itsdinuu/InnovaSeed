@@ -13,17 +13,29 @@ type TeamMemberProfile = {
   has_password: boolean
 }
 
+type LoginMethod = 'email' | 'phone'
+
 export default function LoginPage() {
   const router = useRouter()
   const [activeRole, setActiveRole] = useState<'student' | 'mentor'>('student')
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>('email')
+
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
-  // State untuk Modal Profil Tim
+  // Forgot Password modal state
+  const [showForgotModal, setShowForgotModal] = useState(false)
+  const [forgotIdentifier, setForgotIdentifier] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotError, setForgotError] = useState('')
+  const [forgotSuccess, setForgotSuccess] = useState('')
+
+  // Team profile selection modal state
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [teamMembersList, setTeamMembersList] = useState<TeamMemberProfile[]>([])
   const [selectedProfileId, setSelectedProfileId] = useState('')
@@ -37,7 +49,7 @@ export default function LoginPage() {
       title: 'Student Innovator',
       desc: 'Access the student dashboard and research workspace.',
       workspace: 'Student Dashboard',
-      link: '/dashboard/student'
+      link: '/dashboard/student',
     },
     mentor: {
       key: 'mentor',
@@ -45,17 +57,101 @@ export default function LoginPage() {
       title: 'Faculty & Mentor',
       desc: 'Review teams, mentor feedback, and guidance workflows.',
       workspace: 'Mentor Dashboard',
-      link: '/mentor'
-    }
+      link: '/mentor',
+    },
   } as const
 
   const roles = [roleConfig.student, roleConfig.mentor]
 
+  const normalizePhoneNumber = (rawPhone: string) => {
+    const cleaned = rawPhone.replace(/[^\d+]/g, '').trim()
+    if (!cleaned) return ''
+    if (cleaned.startsWith('+')) return cleaned
+    if (cleaned.startsWith('0')) return `+62${cleaned.slice(1)}`
+    if (cleaned.startsWith('62')) return `+${cleaned}`
+    return `+62${cleaned}`
+  }
+
   const handleRoleSelect = (role: 'student' | 'mentor') => {
     setActiveRole(role)
     setEmail('')
+    setPhone('')
     setPassword('')
     setErrorMessage('')
+  }
+
+  const handleMethodSwitch = (method: LoginMethod) => {
+    setLoginMethod(method)
+    setErrorMessage('')
+  }
+
+  const openForgotModal = () => {
+    setForgotIdentifier(loginMethod === 'email' ? email : phone)
+    setForgotError('')
+    setForgotSuccess('')
+    setShowForgotModal(true)
+  }
+
+  const handleSendResetLink = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setForgotLoading(true)
+    setForgotError('')
+    setForgotSuccess('')
+
+    try {
+      const raw = forgotIdentifier.trim()
+      if (!raw) {
+        throw new Error('Please enter your registered email address or phone number.')
+      }
+
+      let targetEmail = raw.toLowerCase()
+
+      // Jika input tidak mengandung '@', anggap sebagai nomor telepon & cari email-nya di profiles
+      if (!raw.includes('@')) {
+        const normalizedPhone = normalizePhoneNumber(raw)
+        if (!normalizedPhone) {
+          throw new Error('Please enter a valid email address or phone number.')
+        }
+
+        const { data: matchedProfile, error: lookupError } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('phone', normalizedPhone)
+          .maybeSingle()
+
+        if (lookupError) {
+          throw new Error(`Lookup failed: ${lookupError.message}`)
+        }
+
+        if (!matchedProfile?.email) {
+          throw new Error(
+            'No account found with this phone number. Try entering your institutional email instead.'
+          )
+        }
+
+        targetEmail = matchedProfile.email
+      }
+
+      const redirectUrl = `${window.location.origin}/reset-password`
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+        targetEmail,
+        { redirectTo: redirectUrl }
+      )
+
+      if (resetError) throw resetError
+
+      setForgotSuccess(
+        `Password reset link sent to ${targetEmail}. Please check your inbox or spam folder.`
+      )
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to send password reset email. Please try again.'
+      setForgotError(message)
+    } finally {
+      setForgotLoading(false)
+    }
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -64,10 +160,38 @@ export default function LoginPage() {
     setErrorMessage('')
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      let resolvedEmail = email.trim()
+
+      if (loginMethod === 'phone') {
+        const normalizedPhone = normalizePhoneNumber(phone)
+        if (!normalizedPhone) {
+          throw new Error('Please enter a valid phone number.')
+        }
+
+        const { data: matchedProfile, error: lookupError } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('phone', normalizedPhone)
+          .maybeSingle()
+
+        if (lookupError) {
+          throw new Error(`Phone lookup failed: ${lookupError.message}`)
+        }
+
+        if (!matchedProfile?.email) {
+          throw new Error(
+            'No account found with this phone number. Please register or sign in with your institutional email.'
+          )
+        }
+
+        resolvedEmail = matchedProfile.email
+      }
+
+      const { data: authData, error: authError } =
+        await supabase.auth.signInWithPassword({
+          email: resolvedEmail,
+          password,
+        })
 
       if (authError) throw authError
 
@@ -84,7 +208,7 @@ export default function LoginPage() {
         .maybeSingle()
 
       if (!profileError && profileData?.role) {
-        const dbRole = profileData.role.toLowerCase()
+        const dbRole = String(profileData.role).toLowerCase()
         if (['student', 'mentor'].includes(dbRole)) {
           resolvedRole = dbRole as 'student' | 'mentor'
         }
@@ -106,7 +230,8 @@ export default function LoginPage() {
             .eq('team_id', teamData.id)
 
           if (members && members.length > 0) {
-            setTeamMembersList(members)
+            setTeamMembersList(members as TeamMemberProfile[])
+            setSelectedProfileId((members[0] as TeamMemberProfile).id)
             setShowProfileModal(true)
             setLoading(false)
             return
@@ -116,9 +241,11 @@ export default function LoginPage() {
 
       const selectedConfig = roleConfig[resolvedRole]
       router.replace(selectedConfig.link)
-
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Login failed. Please check your credentials.'
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Login failed. Please check your credentials.'
       setErrorMessage(message)
       setLoading(false)
     }
@@ -132,7 +259,7 @@ export default function LoginPage() {
     }
 
     setModalError('')
-    const targetMember = teamMembersList.find(m => m.id === selectedProfileId)
+    const targetMember = teamMembersList.find((m) => m.id === selectedProfileId)
     if (!targetMember) return
 
     sessionStorage.setItem(`active_profile_${authUserId}`, targetMember.id)
@@ -155,29 +282,9 @@ export default function LoginPage() {
     router.replace('/dashboard/student')
   }
 
-  const handleGoogleSSO = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}${roleConfig[activeRole].link}`
-        }
-      })
-      if (error) throw error
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Google SSO login failed.'
-      setErrorMessage(message)
-    }
-  }
-
-  const handleSchoolSSO = () => {
-    alert('School SSO integration (SIAKAD / School Portal) is processing.')
-  }
-
   return (
     <div className="font-sans text-slate-900 bg-[#fffdfa] min-h-screen flex items-center justify-center p-6">
       <main className="w-full max-w-lg bg-white rounded-3xl border border-[#ebdcd0] shadow-xl p-8 sm:p-10">
-        
         {/* Header Logo & Title */}
         <div className="flex flex-col items-center text-center">
           <div className="flex items-center gap-3 mb-3">
@@ -192,14 +299,18 @@ export default function LoginPage() {
             <div className="text-left">
               <div className="flex items-center gap-1.5">
                 <b className="text-base font-extrabold text-slate-900">InnovaSeed</b>
-                <span className="text-[10px] border border-amber-500/30 bg-amber-50 text-amber-700 rounded px-1.5 py-0.2 font-semibold">v2.0</span>
+                <span className="text-[10px] border border-amber-500/30 bg-amber-50 text-amber-700 rounded px-1.5 py-0.2 font-semibold">
+                  v2.0
+                </span>
               </div>
               <p className="text-xs text-slate-500">A Plego Indonesia Product</p>
             </div>
           </div>
 
           <h1 className="text-2xl font-extrabold text-slate-900 mt-2">Welcome Back</h1>
-          <p className="text-slate-500 text-xs mt-1">Select your role and sign in to access your workspace.</p>
+          <p className="text-slate-500 text-xs mt-1">
+            Select your role and sign in with email or phone number.
+          </p>
         </div>
 
         {/* Role Selection Tabs */}
@@ -210,8 +321,8 @@ export default function LoginPage() {
               type="button"
               onClick={() => handleRoleSelect(r.key as 'student' | 'mentor')}
               className={`text-left rounded-2xl border p-3.5 relative transition-all duration-300 ease-out cursor-pointer ${
-                activeRole === r.key 
-                  ? 'border-amber-500 bg-amber-50/70 shadow-sm ring-2 ring-amber-500/20 scale-[1.01]' 
+                activeRole === r.key
+                  ? 'border-amber-500 bg-amber-50/70 shadow-sm ring-2 ring-amber-500/20 scale-[1.01]'
                   : 'border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -220,13 +331,45 @@ export default function LoginPage() {
                   <i className={`fa-solid ${r.icon}`}></i>
                 </span>
                 {activeRole === r.key && (
-                  <span className="text-[10px] font-bold border border-amber-600 bg-amber-500 text-white rounded-md px-2 py-0.5 animate-pulse">Active</span>
+                  <span className="text-[10px] font-bold border border-amber-600 bg-amber-500 text-white rounded-md px-2 py-0.5 animate-pulse">
+                    Active
+                  </span>
                 )}
               </div>
               <b className="block text-xs font-bold text-slate-900">{r.title}</b>
-              <span className="text-[11px] text-slate-500 leading-snug block mt-0.5 line-clamp-2">{r.desc}</span>
+              <span className="text-[11px] text-slate-500 leading-snug block mt-0.5 line-clamp-2">
+                {r.desc}
+              </span>
             </button>
           ))}
+        </div>
+
+        {/* Sign-In Identifier Switcher: Email vs Phone Number */}
+        <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100 border border-slate-200 mt-5">
+          <button
+            type="button"
+            onClick={() => handleMethodSwitch('email')}
+            className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              loginMethod === 'email'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <i className="fa-regular fa-envelope text-amber-600"></i>
+            <span>Email Address</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMethodSwitch('phone')}
+            className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              loginMethod === 'phone'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <i className="fa-solid fa-phone text-amber-600"></i>
+            <span>Phone Number</span>
+          </button>
         </div>
 
         {errorMessage && (
@@ -235,52 +378,59 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* SSO Options */}
-        <div className="mt-6 space-y-2.5">
-          <button
-            type="button"
-            onClick={handleSchoolSSO}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs cursor-pointer"
-          >
-            <i className="fa-solid fa-school text-amber-600"></i> Continue with School SSO
-          </button>
-          <button
-            type="button"
-            onClick={handleGoogleSSO}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs cursor-pointer"
-          >
-            <i className="fa-brands fa-google text-amber-600"></i> Continue with Google Workspace
-          </button>
-        </div>
-
-        {/* Divider */}
-        <div className="relative flex py-4 items-center">
-          <div className="grow border-t border-slate-200"></div>
-          <span className="shrink mx-3 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Or credentials</span>
-          <div className="grow border-t border-slate-200"></div>
-        </div>
-
         {/* Login Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Institutional Email</label>
-            <div className="relative">
-              <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                placeholder="name@innovaseed.sch.id"
-              />
+        <form onSubmit={handleLogin} className="space-y-4 mt-5">
+          {loginMethod === 'email' ? (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Institutional Email
+              </label>
+              <div className="relative">
+                <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  placeholder="name@innovaseed.sch.id"
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Phone Number
+              </label>
+              <div className="relative">
+                <i className="fa-solid fa-phone absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
+                <input
+                  type="tel"
+                  required
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  placeholder="+6281234567890 or 081234567890"
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Format supports international numbers (e.g., +62812...) or local numbers starting with 0.
+              </p>
+            </div>
+          )}
 
           <div>
             <div className="flex justify-between items-center mb-1.5">
-              <label className="block text-xs font-semibold text-slate-700">Account Password</label>
-              <Link href="#" className="text-xs font-semibold text-amber-700 hover:underline">Forgot?</Link>
+              <label className="block text-xs font-semibold text-slate-700">
+                Account Password
+              </label>
+              <button
+                type="button"
+                onClick={openForgotModal}
+                className="text-xs font-semibold text-amber-700 hover:underline cursor-pointer"
+              >
+                Forgot?
+              </button>
             </div>
             <div className="relative">
               <i className="fa-solid fa-lock absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
@@ -319,16 +469,96 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-xs font-bold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 cursor-pointer shadow-md mt-1"
           >
-            {loading ? 'Authenticating...' : `Sign In to ${roleConfig[activeRole].workspace} →`}
+            {loading
+              ? 'Authenticating...'
+              : `Sign In to ${roleConfig[activeRole].workspace} →`}
           </button>
         </form>
 
         <div className="text-center mt-6 pt-4 border-t border-slate-100 text-xs">
           <span className="text-slate-500">Don&apos;t have an innovation team account? </span>
-          <Link href="/register" className="font-bold text-amber-700 hover:underline">Register Team</Link>
+          <Link href="/register" className="font-bold text-amber-700 hover:underline">
+            Register Team
+          </Link>
         </div>
-
       </main>
+
+      {/* FORGOT PASSWORD MODAL */}
+      {showForgotModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#ebdcd0] space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 grid place-items-center font-bold">
+                  <i className="fa-solid fa-key"></i>
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Reset Account Password</h3>
+                  <p className="text-xs text-slate-500">
+                    We will send a password recovery link to your registered email.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
+                aria-label="Close modal"
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {forgotError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 text-xs p-3 rounded-xl">
+                {forgotError}
+              </div>
+            )}
+
+            {forgotSuccess && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs p-3 rounded-xl">
+                {forgotSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleSendResetLink} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Registered Email or Phone Number
+                </label>
+                <div className="relative">
+                  <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
+                  <input
+                    type="text"
+                    required
+                    value={forgotIdentifier}
+                    onChange={(e) => setForgotIdentifier(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                    placeholder="name@innovaseed.sch.id or 081234567890"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="w-1/3 py-2.5 bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl hover:bg-slate-200 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="w-2/3 py-2.5 bg-amber-500 text-white font-bold text-xs rounded-xl hover:bg-amber-600 disabled:opacity-50 transition shadow-md cursor-pointer"
+                >
+                  {forgotLoading ? 'Sending Link...' : 'Send Reset Link →'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* TEAM PROFILE SELECTION MODAL */}
       {showProfileModal && (
@@ -344,8 +574,8 @@ export default function LoginPage() {
                   <p className="text-xs text-slate-500">Choose your name to enter the workspace.</p>
                 </div>
               </div>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={handleSkipProfileModal}
                 className="text-xs text-slate-400 hover:text-slate-600 font-medium cursor-pointer"
               >

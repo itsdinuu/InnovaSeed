@@ -6,17 +6,27 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 
+function normalizePhoneNumber(rawPhone: string): string {
+  const cleaned = rawPhone.replace(/[^\d+]/g, '').trim()
+  if (!cleaned) return ''
+  if (cleaned.startsWith('+')) return cleaned
+  if (cleaned.startsWith('0')) return `+62${cleaned.slice(1)}`
+  if (cleaned.startsWith('62')) return `+${cleaned}`
+  return `+62${cleaned}`
+}
+
 export default function RegisterPage() {
   const router = useRouter()
   const [formData, setFormData] = useState({
     teamName: '',
     leadName: '',
     email: '',
+    phone: '',
     institution: '',
     researchField: 'Biotechnology & Health',
     teamSize: '3 members',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
   })
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -36,24 +46,34 @@ export default function RegisterPage() {
       setErrorMessage('Passwords do not match. Please check and try again.')
       return
     }
+
+    const normalizedEmail = formData.email.trim().toLowerCase()
+    const normalizedPhone = normalizePhoneNumber(formData.phone)
+
+    if (formData.phone.trim() && !normalizedPhone) {
+      setErrorMessage('Please enter a valid phone number.')
+      return
+    }
+
     setLoading(true)
     setErrorMessage('')
 
     try {
-      // 1. Mendaftarkan akun ke Supabase Auth dengan metadata lengkap
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
+        email: normalizedEmail,
         password: formData.password,
         options: {
           data: {
-            full_name: formData.leadName,
-            team_name: formData.teamName,
-            institution: formData.institution,
+            full_name: formData.leadName.trim(),
+            team_name: formData.teamName.trim(),
+            email: normalizedEmail,
+            phone: normalizedPhone || null,
+            institution: formData.institution.trim(),
             research_field: formData.researchField,
             team_size: formData.teamSize,
-            role: 'student'
-          }
-        }
+            role: 'student',
+          },
+        },
       })
 
       if (authError) throw authError
@@ -61,46 +81,46 @@ export default function RegisterPage() {
       const userId = authData.user?.id
 
       if (userId) {
-        // 2. Insert atau Upsert profil ketua ke tabel `profiles`
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .upsert({
-            id: userId,
-            full_name: formData.leadName,
-            role: 'student',
-            institution: formData.institution
-          })
+        const { error: profileError } = await supabase.from('profiles').upsert({
+          id: userId,
+          full_name: formData.leadName.trim(),
+          email: normalizedEmail,
+          phone: normalizedPhone || null,
+          role: 'student',
+          institution: formData.institution.trim(),
+        })
 
         if (profileError) {
           console.warn('Profiles table warning:', profileError.message)
         }
 
-        // 3. Masukkan data ke tabel `teams` dengan lead_id yang unik per akun
         const { data: teamRecord, error: teamError } = await supabase
           .from('teams')
-          .insert([{
-            team_name: formData.teamName,
-            lead_id: userId,
-            institution: formData.institution,
-            research_field: formData.researchField,
-            team_size: formData.teamSize,
-            mentor_code: ''
-          }])
+          .insert([
+            {
+              team_name: formData.teamName.trim(),
+              lead_id: userId,
+              institution: formData.institution.trim(),
+              research_field: formData.researchField,
+              team_size: formData.teamSize,
+              mentor_code: '',
+            },
+          ])
           .select()
           .single()
 
         if (teamError) throw teamError
 
-        // 4. Masukkan Ketua sebagai anggota pertama di tabel `team_members`
         if (teamRecord) {
-          const { error: memberError } = await supabase
-            .from('team_members')
-            .insert([{
+          const { error: memberError } = await supabase.from('team_members').insert([
+            {
               team_id: teamRecord.id,
-              name: formData.leadName,
+              name: formData.leadName.trim(),
+              phone: normalizedPhone || null,
               role: 'leader',
-              has_password: true
-            }])
+              has_password: true,
+            },
+          ])
 
           if (memberError) throw memberError
         }
@@ -108,10 +128,15 @@ export default function RegisterPage() {
 
       showCustomToast('Team account registration successful! Please sign in.')
       router.push('/login')
-
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'An error occurred while registering with Supabase.'
-      if (message.includes('already registered') || message.includes('already been registered')) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'An error occurred while registering with Supabase.'
+      if (
+        message.includes('already registered') ||
+        message.includes('already been registered')
+      ) {
         setErrorMessage('This email is already registered. Please sign in instead.')
       } else {
         setErrorMessage(message)
@@ -124,7 +149,6 @@ export default function RegisterPage() {
   return (
     <div className="font-sans text-slate-900 bg-[#fffdfa] min-h-screen flex items-center justify-center p-6">
       <main className="w-full max-w-xl bg-white rounded-3xl border border-[#ebdcd0] shadow-xl p-8 sm:p-10">
-        
         {/* Header Logo & Title */}
         <div className="flex flex-col items-center text-center">
           <div className="flex items-center gap-3 mb-3">
@@ -139,14 +163,21 @@ export default function RegisterPage() {
             <div className="text-left">
               <div className="flex items-center gap-1.5">
                 <b className="text-base font-extrabold text-slate-900">InnovaSeed</b>
-                <span className="text-[10px] border border-amber-500/30 bg-amber-50 text-amber-700 rounded px-1.5 py-0.2 font-semibold">v2.0</span>
+                <span className="text-[10px] border border-amber-500/30 bg-amber-50 text-amber-700 rounded px-1.5 py-0.2 font-semibold">
+                  v2.0
+                </span>
               </div>
               <p className="text-xs text-slate-500">A Plego Indonesia Product</p>
             </div>
           </div>
 
-          <h1 className="text-2xl font-extrabold text-slate-900 mt-2">Register Innovation Team</h1>
-          <p className="text-slate-500 text-xs mt-1">Create a team account to join the InnovaSeed cohort and access your research workspace.</p>
+          <h1 className="text-2xl font-extrabold text-slate-900 mt-2">
+            Register Innovation Team
+          </h1>
+          <p className="text-slate-500 text-xs mt-1">
+            Create a team account to join the InnovaSeed cohort and access your research
+            workspace.
+          </p>
         </div>
 
         {errorMessage && (
@@ -159,13 +190,15 @@ export default function RegisterPage() {
         <form onSubmit={handleRegister} className="space-y-4 mt-6">
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Team Name</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Team Name
+              </label>
               <div className="relative">
                 <i className="fa-solid fa-user-group absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
                   required
                   value={formData.teamName}
-                  onChange={(e) => setFormData({...formData, teamName: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, teamName: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="e.g., New Era Team"
                 />
@@ -173,42 +206,67 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Team Lead Full Name</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Team Lead Full Name
+              </label>
               <div className="relative">
                 <i className="fa-regular fa-user absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
                   required
                   value={formData.leadName}
-                  onChange={(e) => setFormData({...formData, leadName: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, leadName: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="Your full name"
                 />
               </div>
             </div>
 
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Institutional Email</label>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Institutional Email
+              </label>
               <div className="relative">
                 <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
                   type="email"
                   required
                   value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="student.lead@innovaseed.sch.id"
                 />
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Phone Number <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <div className="relative">
+                <i className="fa-solid fa-phone absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  placeholder="+62812.. or 0812.."
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Required if you want to sign in using your phone number.
+              </p>
+            </div>
+
             <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">School / Institution</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                School / Institution
+              </label>
               <div className="relative">
                 <i className="fa-solid fa-school absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
                   required
                   value={formData.institution}
-                  onChange={(e) => setFormData({...formData, institution: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="e.g., Plego Universe School"
                 />
@@ -216,10 +274,12 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Research Field</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Research Field
+              </label>
               <select
                 value={formData.researchField}
-                onChange={(e) => setFormData({...formData, researchField: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, researchField: e.target.value })}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
               >
                 <option>Biotechnology &amp; Health</option>
@@ -230,10 +290,12 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Team Size</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Team Size
+              </label>
               <select
                 value={formData.teamSize}
-                onChange={(e) => setFormData({...formData, teamSize: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, teamSize: e.target.value })}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
               >
                 <option>1 member</option>
@@ -245,7 +307,9 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Account Password</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Account Password
+              </label>
               <div className="relative">
                 <i className="fa-solid fa-lock absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
@@ -253,7 +317,7 @@ export default function RegisterPage() {
                   required
                   minLength={10}
                   value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-10 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="Min. 10 characters"
                 />
@@ -268,14 +332,18 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Confirm Password</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Confirm Password
+              </label>
               <div className="relative">
                 <i className="fa-solid fa-lock absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
                   type="password"
                   required
                   value={formData.confirmPassword}
-                  onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                  onChange={(e) =>
+                    setFormData({ ...formData, confirmPassword: e.target.value })
+                  }
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="Repeat password"
                 />
@@ -287,13 +355,30 @@ export default function RegisterPage() {
             <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
             <div>
               <b className="font-semibold text-slate-800">Mentor verification required</b>
-              <p className="text-slate-600 mt-0.5 text-[11px]">Faculty mentor approval is required after registration.</p>
+              <p className="text-slate-600 mt-0.5 text-[11px]">
+                Faculty mentor approval is required after registration.
+              </p>
             </div>
           </div>
 
           <label className="flex gap-2 items-center text-xs text-slate-600 mt-4 cursor-pointer">
-            <input type="checkbox" defaultChecked required className="accent-amber-500 w-4 h-4 cursor-pointer" />
-            <span>I agree to the <Link href="#" className="font-semibold underline text-slate-900">Terms of Use</Link> and <Link href="#" className="font-semibold underline text-slate-900">Data Policy</Link>.</span>
+            <input
+              type="checkbox"
+              defaultChecked
+              required
+              className="accent-amber-500 w-4 h-4 cursor-pointer"
+            />
+            <span>
+              I agree to the{' '}
+              <Link href="#" className="font-semibold underline text-slate-900">
+                Terms of Use
+              </Link>{' '}
+              and{' '}
+              <Link href="#" className="font-semibold underline text-slate-900">
+                Data Policy
+              </Link>
+              .
+            </span>
           </label>
 
           <button
@@ -307,14 +392,17 @@ export default function RegisterPage() {
 
         <div className="text-center mt-6 pt-4 border-t border-slate-100 text-xs">
           <span className="text-slate-500">Already have an InnovaSeed account? </span>
-          <Link href="/login" className="font-bold text-amber-700 hover:underline">Sign in</Link>
+          <Link href="/login" className="font-bold text-amber-700 hover:underline">
+            Sign in
+          </Link>
         </div>
-
       </main>
 
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-[#1E293B] border border-amber-500/40 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-bounce">
-          <div className="w-6 h-6 rounded-full bg-amber-500 text-slate-900 grid place-items-center font-bold text-xs">✓</div>
+          <div className="w-6 h-6 rounded-full bg-amber-500 text-slate-900 grid place-items-center font-bold text-xs">
+            ✓
+          </div>
           <span className="text-xs font-medium">{toastMessage}</span>
         </div>
       )}

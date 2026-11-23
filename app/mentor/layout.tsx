@@ -135,6 +135,44 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
   const [replyText, setReplyText] = useState('')
   const [sendingReply, setSendingReply] = useState(false)
 
+  useEffect(() => {
+  if (!mentorUserId) return
+
+  const storageKey = `mentor_last_seen_${mentorUserId}`
+
+  const restoreData = () => {
+    try {
+      const saved = localStorage.getItem(storageKey)
+
+      if (!saved) {
+        setLastSeenByTeam({})
+        return
+      }
+
+      const parsed = JSON.parse(saved) as Record<string, unknown>
+      const validEntries: Record<string, number> = {}
+
+      for (const [teamKey, value] of Object.entries(parsed)) {
+        const id = Number(value)
+
+        if (Number.isFinite(id) && id >= 0) {
+          validEntries[teamKey] = id
+        }
+      }
+
+      setLastSeenByTeam(validEntries)
+    } catch (error) {
+      console.error(
+        'Failed to restore read-message markers:',
+        error
+      )
+      setLastSeenByTeam({})
+    }
+  }
+
+  queueMicrotask(restoreData)
+}, [mentorUserId])
+
   const { isDarkMode, toggleDarkMode } = useTheme()
 
   const loadMentorConversations = useCallback(
@@ -652,15 +690,36 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
 
   const handleSelectTeam = (group: TeamConversationGroup) => {
     setActiveTeamKey(group.key)
+
+    // Clear this team's badge immediately when its conversation is opened.
+    setTeamGroups((prev) =>
+      prev.map((item) =>
+        item.key === group.key ? { ...item, unreadCount: 0 } : item
+      )
+    )
+
     const maxId = allMessages
       .filter((m) => m.teamKey === group.key)
       .reduce((acc, m) => Math.max(acc, m.rawIdNum), 0)
 
     if (maxId > 0) {
-      setLastSeenByTeam((prev) => ({
-        ...prev,
-        [group.key]: Math.max(prev[group.key] || 0, maxId),
-      }))
+      const updated = {
+        ...lastSeenByTeam,
+        [group.key]: Math.max(lastSeenByTeam[group.key] || 0, maxId),
+      }
+      setLastSeenByTeam(updated)
+
+      // Persist outside the state updater (avoids side effects in React updater).
+      if (mentorUserId) {
+        try {
+          localStorage.setItem(
+            `mentor_last_seen_${mentorUserId}`,
+            JSON.stringify(updated)
+          )
+        } catch (error) {
+          console.error('Failed to save read-message markers:', error)
+        }
+      }
     }
   }
 
