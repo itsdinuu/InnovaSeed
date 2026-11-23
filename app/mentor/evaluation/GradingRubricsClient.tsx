@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTheme } from '@/context/ThemeContext'
 import { supabase } from '@/lib/supabaseClient'
@@ -147,7 +147,7 @@ function parseScopedFeedback(rawText: string): {
   }
 }
 
-export default function GradingRubricsClient() {
+function GradingRubricsContent() {
   const { isDarkMode } = useTheme()
   const searchParams = useSearchParams()
 
@@ -1029,5 +1029,19 @@ export default function GradingRubricsClient() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function GradingRubricsClient() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-12 text-center text-xs text-slate-400 animate-pulse">
+          Loading grading &amp; rubrics...
+        </div>
+      }
+    >
+      <GradingRubricsContent />
+    </Suspense>
   )
 }
