@@ -6,13 +6,6 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 
-type TeamMemberProfile = {
-  id: string
-  name: string
-  role: 'leader' | 'member'
-  has_password: boolean
-}
-
 type LoginMethod = 'email' | 'phone'
 
 export default function LoginPage() {
@@ -35,27 +28,20 @@ export default function LoginPage() {
   const [forgotError, setForgotError] = useState('')
   const [forgotSuccess, setForgotSuccess] = useState('')
 
-  // Team profile selection modal state
-  const [showProfileModal, setShowProfileModal] = useState(false)
-  const [teamMembersList, setTeamMembersList] = useState<TeamMemberProfile[]>([])
-  const [selectedProfileId, setSelectedProfileId] = useState('')
-  const [modalError, setModalError] = useState('')
-  const [authUserId, setAuthUserId] = useState('')
-
   const roleConfig = {
     student: {
       key: 'student',
       icon: 'fa-graduation-cap',
       title: 'Student Innovator',
-      desc: 'Access the student dashboard and research workspace.',
+      desc: 'Access your individual self-paced workspace, team code hub, and research tools.',
       workspace: 'Student Dashboard',
       link: '/dashboard/student',
     },
     mentor: {
       key: 'mentor',
       icon: 'fa-user-tie',
-      title: 'Faculty & Mentor',
-      desc: 'Review teams, mentor feedback, and guidance workflows.',
+      title: 'PLEGO Mentor',
+      desc: 'Review mentored students/teams, share feedback, and manage guidance codes.',
       workspace: 'Mentor Dashboard',
       link: '/mentor',
     },
@@ -106,7 +92,6 @@ export default function LoginPage() {
 
       let targetEmail = raw.toLowerCase()
 
-      // Jika input tidak mengandung '@', anggap sebagai nomor telepon & cari email-nya di profiles
       if (!raw.includes('@')) {
         const normalizedPhone = normalizePhoneNumber(raw)
         if (!normalizedPhone) {
@@ -125,7 +110,7 @@ export default function LoginPage() {
 
         if (!matchedProfile?.email) {
           throw new Error(
-            'No account found with this phone number. Try entering your institutional email instead.'
+            'No account found with this phone number. Try entering your email address instead.'
           )
         }
 
@@ -180,7 +165,7 @@ export default function LoginPage() {
 
         if (!matchedProfile?.email) {
           throw new Error(
-            'No account found with this phone number. Please register or sign in with your institutional email.'
+            'No account found with this phone number. Please register or sign in with your email address.'
           )
         }
 
@@ -198,46 +183,35 @@ export default function LoginPage() {
       const user = authData?.user
       if (!user) throw new Error('Authentication user session not found.')
 
-      setAuthUserId(user.id)
-
-      let resolvedRole: 'student' | 'mentor' = activeRole
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .maybeSingle()
 
-      if (!profileError && profileData?.role) {
-        const dbRole = String(profileData.role).toLowerCase()
-        if (['student', 'mentor'].includes(dbRole)) {
-          resolvedRole = dbRole as 'student' | 'mentor'
-        }
+      if (profileError) {
+        console.warn('Profile role lookup warning:', profileError.message)
       }
 
-      const hasSkippedProfile = sessionStorage.getItem(`skip_profile_modal_${user.id}`)
+      const dbRole = String(
+        profileData?.role || user.user_metadata?.role || ''
+      )
+        .trim()
+        .toLowerCase()
 
-      if (resolvedRole === 'student' && !hasSkippedProfile) {
-        const { data: teamData } = await supabase
-          .from('teams')
-          .select('id')
-          .eq('lead_id', user.id)
-          .maybeSingle()
+      const emailLower = String(user.email || '').trim().toLowerCase()
+      const isAdminAccount =
+        dbRole === 'admin' ||
+        emailLower === 'plego@gmail.com' ||
+        emailLower.startsWith('admin')
 
-        if (teamData) {
-          const { data: members } = await supabase
-            .from('team_members')
-            .select('*')
-            .eq('team_id', teamData.id)
-
-          if (members && members.length > 0) {
-            setTeamMembersList(members as TeamMemberProfile[])
-            setSelectedProfileId((members[0] as TeamMemberProfile).id)
-            setShowProfileModal(true)
-            setLoading(false)
-            return
-          }
-        }
+      if (isAdminAccount) {
+        router.replace('/admin')
+        return
       }
+
+      const resolvedRole: 'student' | 'mentor' =
+        dbRole === 'mentor' || dbRole === 'student' ? dbRole : activeRole
 
       const selectedConfig = roleConfig[resolvedRole]
       router.replace(selectedConfig.link)
@@ -249,37 +223,6 @@ export default function LoginPage() {
       setErrorMessage(message)
       setLoading(false)
     }
-  }
-
-  const handleConfirmProfileSelection = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selectedProfileId) {
-      setModalError('Please select your team profile name.')
-      return
-    }
-
-    setModalError('')
-    const targetMember = teamMembersList.find((m) => m.id === selectedProfileId)
-    if (!targetMember) return
-
-    sessionStorage.setItem(`active_profile_${authUserId}`, targetMember.id)
-    sessionStorage.setItem(`active_member_name_${authUserId}`, targetMember.name)
-    sessionStorage.setItem(`skip_profile_modal_${authUserId}`, 'true')
-
-    router.replace('/dashboard/student')
-  }
-
-  const handleSkipProfileModal = () => {
-    if (authUserId) {
-      const defaultMember = teamMembersList[0]
-      if (defaultMember) {
-        sessionStorage.setItem(`active_profile_${authUserId}`, defaultMember.id)
-        sessionStorage.setItem(`active_member_name_${authUserId}`, defaultMember.name)
-      }
-      sessionStorage.setItem(`skip_profile_modal_${authUserId}`, 'true')
-    }
-    setShowProfileModal(false)
-    router.replace('/dashboard/student')
   }
 
   return (
@@ -309,7 +252,7 @@ export default function LoginPage() {
 
           <h1 className="text-2xl font-extrabold text-slate-900 mt-2">Welcome Back</h1>
           <p className="text-slate-500 text-xs mt-1">
-            Select your role and sign in with email or phone number.
+            Sign in with your individual account using email or phone number.
           </p>
         </div>
 
@@ -383,7 +326,7 @@ export default function LoginPage() {
           {loginMethod === 'email' ? (
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Institutional Email
+                Email Address
               </label>
               <div className="relative">
                 <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
@@ -476,10 +419,22 @@ export default function LoginPage() {
         </form>
 
         <div className="text-center mt-6 pt-4 border-t border-slate-100 text-xs">
-          <span className="text-slate-500">Don&apos;t have an innovation team account? </span>
+          <span className="text-slate-500">Don&apos;t have an innovator account? </span>
           <Link href="/register" className="font-bold text-amber-700 hover:underline">
-            Register Team
+            Create Account
           </Link>
+        </div>
+
+        <div className="text-center mt-3 text-[11px] text-slate-500">
+          <span>Need help? </span>
+          <a
+            href="https://wa.me/message/YBBHHD4MUJ4TJ1"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-bold text-emerald-700 hover:underline"
+          >
+            <span>Contact Admin</span>
+          </a>
         </div>
       </main>
 
@@ -553,86 +508,6 @@ export default function LoginPage() {
                   className="w-2/3 py-2.5 bg-amber-500 text-white font-bold text-xs rounded-xl hover:bg-amber-600 disabled:opacity-50 transition shadow-md cursor-pointer"
                 >
                   {forgotLoading ? 'Sending Link...' : 'Send Reset Link →'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* TEAM PROFILE SELECTION MODAL */}
-      {showProfileModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-500/30 space-y-5 animate-in fade-in zoom-in duration-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 grid place-items-center font-bold">
-                  <i className="fa-solid fa-users"></i>
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900">Select Active Team Profile</h3>
-                  <p className="text-xs text-slate-500">Choose your name to enter the workspace.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleSkipProfileModal}
-                className="text-xs text-slate-400 hover:text-slate-600 font-medium cursor-pointer"
-              >
-                Skip →
-              </button>
-            </div>
-
-            {modalError && (
-              <div className="bg-red-50 border border-red-200 text-red-600 text-xs p-3 rounded-lg">
-                {modalError}
-              </div>
-            )}
-
-            <form onSubmit={handleConfirmProfileSelection} className="space-y-4">
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {teamMembersList.map((member) => (
-                  <label
-                    key={member.id}
-                    onClick={() => setSelectedProfileId(member.id)}
-                    className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                      selectedProfileId === member.id
-                        ? 'border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20 shadow-sm'
-                        : 'border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="teamMemberProfile"
-                        checked={selectedProfileId === member.id}
-                        onChange={() => setSelectedProfileId(member.id)}
-                        className="accent-amber-500 w-4 h-4 cursor-pointer"
-                      />
-                      <div>
-                        <b className="block text-sm text-slate-900">{member.name}</b>
-                        <span className="text-[11px] text-slate-500 uppercase tracking-wide font-medium">
-                          {member.role === 'leader' ? 'Team Leader' : 'Team Member'}
-                        </span>
-                      </div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={handleSkipProfileModal}
-                  className="w-1/3 py-2.5 bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl hover:bg-slate-200 transition cursor-pointer"
-                >
-                  Skip
-                </button>
-                <button
-                  type="submit"
-                  className="w-2/3 py-2.5 bg-amber-500 text-white font-bold text-xs rounded-xl hover:bg-amber-600 transition shadow-md cursor-pointer"
-                >
-                  Continue →
                 </button>
               </div>
             </form>

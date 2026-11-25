@@ -18,13 +18,11 @@ function normalizePhoneNumber(rawPhone: string): string {
 export default function RegisterPage() {
   const router = useRouter()
   const [formData, setFormData] = useState({
-    teamName: '',
-    leadName: '',
+    fullName: '',
     email: '',
     phone: '',
     institution: '',
     researchField: 'Biotechnology & Health',
-    teamSize: '3 members',
     password: '',
     confirmPassword: '',
   })
@@ -49,6 +47,8 @@ export default function RegisterPage() {
 
     const normalizedEmail = formData.email.trim().toLowerCase()
     const normalizedPhone = normalizePhoneNumber(formData.phone)
+    const cleanFullName = formData.fullName.trim()
+    const cleanInstitution = formData.institution.trim()
 
     if (formData.phone.trim() && !normalizedPhone) {
       setErrorMessage('Please enter a valid phone number.')
@@ -64,13 +64,11 @@ export default function RegisterPage() {
         password: formData.password,
         options: {
           data: {
-            full_name: formData.leadName.trim(),
-            team_name: formData.teamName.trim(),
+            full_name: cleanFullName,
             email: normalizedEmail,
             phone: normalizedPhone || null,
-            institution: formData.institution.trim(),
+            institution: cleanInstitution,
             research_field: formData.researchField,
-            team_size: formData.teamSize,
             role: 'student',
           },
         },
@@ -83,50 +81,19 @@ export default function RegisterPage() {
       if (userId) {
         const { error: profileError } = await supabase.from('profiles').upsert({
           id: userId,
-          full_name: formData.leadName.trim(),
+          full_name: cleanFullName,
           email: normalizedEmail,
           phone: normalizedPhone || null,
           role: 'student',
-          institution: formData.institution.trim(),
+          institution: cleanInstitution,
         })
 
         if (profileError) {
           console.warn('Profiles table warning:', profileError.message)
         }
-
-        const { data: teamRecord, error: teamError } = await supabase
-          .from('teams')
-          .insert([
-            {
-              team_name: formData.teamName.trim(),
-              lead_id: userId,
-              institution: formData.institution.trim(),
-              research_field: formData.researchField,
-              team_size: formData.teamSize,
-              mentor_code: '',
-            },
-          ])
-          .select()
-          .single()
-
-        if (teamError) throw teamError
-
-        if (teamRecord) {
-          const { error: memberError } = await supabase.from('team_members').insert([
-            {
-              team_id: teamRecord.id,
-              name: formData.leadName.trim(),
-              phone: normalizedPhone || null,
-              role: 'leader',
-              has_password: true,
-            },
-          ])
-
-          if (memberError) throw memberError
-        }
       }
 
-      showCustomToast('Team account registration successful! Please sign in.')
+      showCustomToast('Individual innovator account created! Please sign in.')
       router.push('/login')
     } catch (err: unknown) {
       const message =
@@ -172,11 +139,11 @@ export default function RegisterPage() {
           </div>
 
           <h1 className="text-2xl font-extrabold text-slate-900 mt-2">
-            Register Innovation Team
+            Create Innovator Account
           </h1>
           <p className="text-slate-500 text-xs mt-1">
-            Create a team account to join the InnovaSeed cohort and access your research
-            workspace.
+            Start in self-paced mode with your individual account. You can create or join a team
+            using an invite code anytime inside your workspace.
           </p>
         </div>
 
@@ -189,32 +156,16 @@ export default function RegisterPage() {
         {/* Registration Form */}
         <form onSubmit={handleRegister} className="space-y-4 mt-6">
           <div className="grid sm:grid-cols-2 gap-4">
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Team Name
-              </label>
-              <div className="relative">
-                <i className="fa-solid fa-user-group absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
-                <input
-                  required
-                  value={formData.teamName}
-                  onChange={(e) => setFormData({ ...formData, teamName: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="e.g., New Era Team"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Team Lead Full Name
+                Full Name
               </label>
               <div className="relative">
                 <i className="fa-regular fa-user absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
                 <input
                   required
-                  value={formData.leadName}
-                  onChange={(e) => setFormData({ ...formData, leadName: e.target.value })}
+                  value={formData.fullName}
+                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   placeholder="Your full name"
                 />
@@ -223,7 +174,7 @@ export default function RegisterPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Institutional Email
+                Email Address
               </label>
               <div className="relative">
                 <i className="fa-regular fa-envelope absolute left-3.5 top-3.5 text-slate-400 text-xs"></i>
@@ -233,7 +184,7 @@ export default function RegisterPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="student.lead@innovaseed.sch.id"
+                  placeholder="student@innovaseed.sch.id"
                 />
               </div>
             </div>
@@ -253,11 +204,11 @@ export default function RegisterPage() {
                 />
               </div>
               <p className="text-[11px] text-slate-400 mt-1">
-                Required if you want to sign in using your phone number.
+                Optional for quick contact or team coordination.
               </p>
             </div>
 
-            <div className="sm:col-span-2">
+            <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 School / Institution
               </label>
@@ -268,14 +219,14 @@ export default function RegisterPage() {
                   value={formData.institution}
                   onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="e.g., Plego Universe School"
+                  placeholder="e.g., Plego Universe"
                 />
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Research Field
+                Primary Research Field
               </label>
               <select
                 value={formData.researchField}
@@ -286,23 +237,6 @@ export default function RegisterPage() {
                 <option>Environmental Engineering</option>
                 <option>Materials Science</option>
                 <option>Computer Science &amp; IoT</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Team Size
-              </label>
-              <select
-                value={formData.teamSize}
-                onChange={(e) => setFormData({ ...formData, teamSize: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-3 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
-              >
-                <option>1 member</option>
-                <option>2 members</option>
-                <option>3 members</option>
-                <option>4 members</option>
-                <option>5 members</option>
               </select>
             </div>
 
@@ -354,9 +288,11 @@ export default function RegisterPage() {
           <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 mt-4 text-xs">
             <i className="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
             <div>
-              <b className="font-semibold text-slate-800">Mentor verification required</b>
+              <b className="font-semibold text-slate-800">Self-paced first, optional team &amp; mentor</b>
               <p className="text-slate-600 mt-0.5 text-[11px]">
-                Faculty mentor approval is required after registration.
+                You can explore and build independently right away. Create or join a team via invite
+                code later, and unlock paid PLEGO mentor guidance whenever you enroll in a mentor
+                package.
               </p>
             </div>
           </div>
@@ -386,7 +322,7 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-xs font-bold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 mt-4 cursor-pointer shadow-md"
           >
-            {loading ? 'Creating Account...' : 'Create Team Account →'}
+            {loading ? 'Creating Account...' : 'Create Innovator Account →'}
           </button>
         </form>
 
@@ -396,6 +332,19 @@ export default function RegisterPage() {
             Sign in
           </Link>
         </div>
+
+        <div className="text-center mt-3 text-[11px] text-slate-500">
+          <span>Need help? </span>
+          <a
+            href="https://wa.me/message/YBBHHD4MUJ4TJ1"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-bold text-emerald-700 hover:underline"
+            >
+            <span>Contact Admin</span>
+          </a>
+        </div>
+
       </main>
 
       {toastMessage && (
