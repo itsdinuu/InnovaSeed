@@ -3,9 +3,11 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { ThemeProvider, useTheme } from '@/context/ThemeContext'
+import { MotionStyles } from '@/components/motion/motion-styles'
+import { PageTransition } from '@/components/motion/page-transition'
 
 type TeamMemberItem = {
   id: string
@@ -24,6 +26,7 @@ type TeamConversationGroup = {
   unreadCount: number
   lastMessageText: string
   lastMessageTime?: string
+  maxSeqOrder: number
 }
 
 type ChatMessageItem = {
@@ -34,6 +37,7 @@ type ChatMessageItem = {
   text: string
   createdAt?: string
   rawIdNum: number
+  seqOrder: number
 }
 
 function isUuidLike(val?: string | null) {
@@ -119,6 +123,11 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
   // State Chat Drawer / Pop-up (2 tahap: List Tim dulu -> Klik tim melebar & geser ke chat)
   const [chatOpen, setChatOpen] = useState(false)
   const [activeTeamKey, setActiveTeamKey] = useState<string | null>(null)
+  const activeTeamKeyRef = useRef<string | null>(null)
+
+  const chatPanelRef = useRef<HTMLDivElement | null>(null)
+  const chatToggleRef = useRef<HTMLButtonElement | null>(null)
+
   const [searchQuery, setSearchQuery] = useState('')
   const [filterTab, setFilterTab] = useState<'all' | 'unread'>('all')
   const [teamGroups, setTeamGroups] = useState<TeamConversationGroup[]>([])
@@ -132,46 +141,94 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
     >
   >([])
   const [lastSeenByTeam, setLastSeenByTeam] = useState<Record<string, number>>({})
+  const lastSeenRef = useRef<Record<string, number>>({})
+
   const [replyText, setReplyText] = useState('')
   const [sendingReply, setSendingReply] = useState(false)
+  const [replyError, setReplyError] = useState<string | null>(null)
 
   useEffect(() => {
-  if (!mentorUserId) return
+    activeTeamKeyRef.current = activeTeamKey
+  }, [activeTeamKey])
 
-  const storageKey = `mentor_last_seen_${mentorUserId}`
+  useEffect(() => {
+    lastSeenRef.current = lastSeenByTeam
+  }, [lastSeenByTeam])
 
-  const restoreData = () => {
-    try {
-      const saved = localStorage.getItem(storageKey)
+  const closeChatPopup = useCallback(() => {
+    activeTeamKeyRef.current = null
+    setChatOpen(false)
+    setActiveTeamKey(null)
+    setReplyError(null)
+  }, [])
 
-      if (!saved) {
-        setLastSeenByTeam({})
-        return
+  useEffect(() => {
+    if (!chatOpen) return
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+
+      const clickedInsidePanel = chatPanelRef.current?.contains(target) ?? false
+      const clickedToggleBtn = chatToggleRef.current?.contains(target) ?? false
+
+      if (!clickedInsidePanel && !clickedToggleBtn) {
+        closeChatPopup()
       }
-
-      const parsed = JSON.parse(saved) as Record<string, unknown>
-      const validEntries: Record<string, number> = {}
-
-      for (const [teamKey, value] of Object.entries(parsed)) {
-        const id = Number(value)
-
-        if (Number.isFinite(id) && id >= 0) {
-          validEntries[teamKey] = id
-        }
-      }
-
-      setLastSeenByTeam(validEntries)
-    } catch (error) {
-      console.error(
-        'Failed to restore read-message markers:',
-        error
-      )
-      setLastSeenByTeam({})
     }
-  }
 
-  queueMicrotask(restoreData)
-}, [mentorUserId])
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeChatPopup()
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [chatOpen, closeChatPopup])
+
+  useEffect(() => {
+    if (!mentorUserId) return
+
+    const storageKey = `mentor_last_seen_${mentorUserId}`
+
+    const restoreData = () => {
+      try {
+        const saved = localStorage.getItem(storageKey)
+
+        if (!saved) {
+          lastSeenRef.current = {}
+          setLastSeenByTeam({})
+          return
+        }
+
+        const parsed = JSON.parse(saved) as Record<string, unknown>
+        const validEntries: Record<string, number> = {}
+
+        for (const [teamKey, value] of Object.entries(parsed)) {
+          const id = Number(value)
+
+          if (Number.isFinite(id) && id >= 0) {
+            validEntries[teamKey] = id
+          }
+        }
+
+        lastSeenRef.current = validEntries
+        setLastSeenByTeam(validEntries)
+      } catch (error) {
+        console.error('Failed to restore read-message markers:', error)
+        lastSeenRef.current = {}
+        setLastSeenByTeam({})
+      }
+    }
+
+    queueMicrotask(restoreData)
+  }, [mentorUserId])
 
   const { isDarkMode, toggleDarkMode } = useTheme()
 
@@ -314,6 +371,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
 
         const parsedRows: Array<{
           idNum: number
+          seqOrder: number
           rawId: string | number
           studentId: string
           projectId: string
@@ -324,12 +382,14 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
           senderRole?: string
         }> = []
 
+        let seqCounter = 0
         for (const fb of (feedbackRows || []) as Record<string, unknown>[]) {
           const rawBody = String(fb.feedback_text ?? fb.comment ?? fb.message ?? '').trim()
           if (!rawBody) continue
 
+          seqCounter += 1
           const parsed = parseScopedFeedback(rawBody)
-          const rowIdNum = Number(fb.id) || parsedRows.length + 1
+          const rowIdNum = Number(fb.id) || seqCounter
           const createdAt =
             (fb.inserted_at as string | undefined) || (fb.created_at as string | undefined)
 
@@ -343,6 +403,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
 
             parsedRows.push({
               idNum: rowIdNum,
+              seqOrder: seqCounter,
               rawId: (fb.id as string | number) ?? rowIdNum,
               studentId: parsed.studentId,
               projectId: resolvedProjId,
@@ -369,6 +430,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
               String(projectsByOwner.get(fbStudent)?.id || 'default')
             parsedRows.push({
               idNum: rowIdNum,
+              seqOrder: seqCounter,
               rawId: (fb.id as string | number) ?? rowIdNum,
               studentId: fbStudent,
               projectId: resolvedProjId,
@@ -443,19 +505,26 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
             })
           }
 
-          const groupKey = `${studentId}::${projectId}`
-          groupsMap.set(groupKey, {
-            key: groupKey,
-            studentId,
-            projectId,
-            teamName,
-            projectTitle,
-            members: parsedMembers,
-            unreadCount: 0,
-            lastMessageText: 'No messages yet. Click to start conversation.',
-            lastMessageTime: undefined,
-          })
+          const groupKey = studentId
+          if (!groupsMap.has(groupKey)) {
+            groupsMap.set(groupKey, {
+              key: groupKey,
+              studentId,
+              projectId,
+              teamName,
+              projectTitle,
+              members: parsedMembers,
+              unreadCount: 0,
+              lastMessageText: 'No messages yet. Click to start conversation.',
+              lastMessageTime: undefined,
+              maxSeqOrder: 0,
+            })
+          }
         }
+
+        const currentSeen = lastSeenRef.current
+        const currentlyOpenKey = activeTeamKeyRef.current
+        let updatedSeen: Record<string, number> | null = null
 
         const formattedMessages: Array<
           ChatMessageItem & { studentId: string; projectId: string; teamKey: string }
@@ -477,7 +546,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
               ? String(proj.id)
               : 'default'
 
-          const groupKey = `${msg.studentId}::${resolvedProjId}`
+          const groupKey = msg.studentId
 
           if (!groupsMap.has(groupKey)) {
             const projectTitle =
@@ -505,24 +574,37 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
               unreadCount: 0,
               lastMessageText: msg.text,
               lastMessageTime: msg.createdAt,
+              maxSeqOrder: msg.seqOrder,
             })
           }
 
           const targetGroup = groupsMap.get(groupKey)!
+          targetGroup.maxSeqOrder = Math.max(targetGroup.maxSeqOrder, msg.seqOrder)
           targetGroup.lastMessageText =
             msg.direction === 'STUDENT_TO_MENTOR'
               ? `${studentDisplayName}: ${msg.text}`
               : `You: ${msg.text}`
           targetGroup.lastMessageTime = msg.createdAt
 
-          const seenId = lastSeenByTeam[groupKey] ?? 0
-          if (msg.direction === 'STUDENT_TO_MENTOR' && msg.idNum > seenId) {
-            targetGroup.unreadCount += 1
+          if (currentlyOpenKey === groupKey) {
+            const prevSeen = (updatedSeen ?? currentSeen)[groupKey] ?? 0
+            if (msg.seqOrder > prevSeen) {
+              updatedSeen = {
+                ...(updatedSeen ?? currentSeen),
+                [groupKey]: msg.seqOrder,
+              }
+            }
+          } else {
+            const seenSeq = currentSeen[groupKey] ?? 0
+            if (msg.direction === 'STUDENT_TO_MENTOR' && msg.seqOrder > seenSeq) {
+              targetGroup.unreadCount += 1
+            }
           }
 
           formattedMessages.push({
             id: msg.rawId,
             rawIdNum: msg.idNum,
+            seqOrder: msg.seqOrder,
             studentId: msg.studentId,
             projectId: resolvedProjId,
             teamKey: groupKey,
@@ -540,6 +622,19 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
           })
         }
 
+        if (updatedSeen) {
+          lastSeenRef.current = updatedSeen
+          setLastSeenByTeam(updatedSeen)
+          try {
+            localStorage.setItem(
+              `mentor_last_seen_${currentMentorId}`,
+              JSON.stringify(updatedSeen)
+            )
+          } catch (error) {
+            console.error('Failed to persist read-message markers:', error)
+          }
+        }
+
         const listGroups = Array.from(groupsMap.values())
         setTeamGroups(listGroups)
         setAllMessages(formattedMessages)
@@ -547,7 +642,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
         console.error('Error loading mentor conversations:', err)
       }
     },
-    [lastSeenByTeam]
+    []
   )
 
   useEffect(() => {
@@ -659,13 +754,18 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
   }, [mentorUserId, mentorName, loadMentorConversations])
 
   const totalUnreadCount = useMemo(
-    () => teamGroups.reduce((sum, g) => sum + g.unreadCount, 0),
-    [teamGroups]
+    () =>
+      teamGroups.reduce(
+        (sum, g) => sum + (g.key === activeTeamKey ? 0 : g.unreadCount),
+        0
+      ),
+    [teamGroups, activeTeamKey]
   )
 
   const filteredTeams = useMemo(() => {
     return teamGroups.filter((g) => {
-      const matchesTab = filterTab === 'all' ? true : g.unreadCount > 0
+      const effectiveUnread = g.key === activeTeamKey ? 0 : g.unreadCount
+      const matchesTab = filterTab === 'all' ? true : effectiveUnread > 0
       if (!matchesTab) return false
       const q = searchQuery.trim().toLowerCase()
       if (!q) return true
@@ -676,7 +776,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
         memberMatch
       )
     })
-  }, [teamGroups, filterTab, searchQuery])
+  }, [teamGroups, filterTab, searchQuery, activeTeamKey])
 
   const selectedTeam = useMemo(
     () => teamGroups.find((g) => g.key === activeTeamKey) || null,
@@ -689,27 +789,31 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
   }, [allMessages, selectedTeam])
 
   const handleSelectTeam = (group: TeamConversationGroup) => {
+    activeTeamKeyRef.current = group.key
     setActiveTeamKey(group.key)
+    setReplyError(null)
 
-    // Clear this team's badge immediately when its conversation is opened.
     setTeamGroups((prev) =>
       prev.map((item) =>
         item.key === group.key ? { ...item, unreadCount: 0 } : item
       )
     )
 
-    const maxId = allMessages
-      .filter((m) => m.teamKey === group.key)
-      .reduce((acc, m) => Math.max(acc, m.rawIdNum), 0)
+    const maxSeq = Math.max(
+      group.maxSeqOrder || 0,
+      allMessages
+        .filter((m) => m.teamKey === group.key)
+        .reduce((acc, m) => Math.max(acc, m.seqOrder), 0)
+    )
 
-    if (maxId > 0) {
+    if (maxSeq > 0) {
       const updated = {
-        ...lastSeenByTeam,
-        [group.key]: Math.max(lastSeenByTeam[group.key] || 0, maxId),
+        ...lastSeenRef.current,
+        [group.key]: Math.max(lastSeenRef.current[group.key] || 0, maxSeq),
       }
+      lastSeenRef.current = updated
       setLastSeenByTeam(updated)
 
-      // Persist outside the state updater (avoids side effects in React updater).
       if (mentorUserId) {
         try {
           localStorage.setItem(
@@ -728,15 +832,22 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
     if (!mentorUserId || !selectedTeam || !replyText.trim() || sendingReply) return
 
     setSendingReply(true)
+    setReplyError(null)
+
     try {
       const cleanBody = replyText.trim()
       const scopedText = `[LINK:${mentorUserId}|${selectedTeam.studentId}|${selectedTeam.projectId}|MENTOR_TO_STUDENT] ${cleanBody}`
+
+      const safeProjectId =
+        selectedTeam.projectId && selectedTeam.projectId !== 'default'
+          ? selectedTeam.projectId
+          : null
 
       const { error } = await supabase.from('mentor_feedback').insert([
         {
           mentor_id: mentorUserId,
           student_id: selectedTeam.studentId,
-          project_id: selectedTeam.projectId !== 'default' ? selectedTeam.projectId : null,
+          project_id: safeProjectId,
           mentor_name: mentorName,
           mentor_role: mentorRoleBadge,
           feedback_text: scopedText,
@@ -744,12 +855,31 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
         },
       ])
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase mentor_feedback insert error:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+        })
+        throw new Error(
+          error.message ||
+            error.details ||
+            `Insert gagal (${error.code || 'unknown'}). Cek RLS policy atau kolom mentor_feedback.`
+        )
+      }
 
       setReplyText('')
       await loadMentorConversations(mentorUserId, mentorName)
     } catch (err) {
-      console.error('Failed to send mentor reply:', err)
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as { message?: unknown }).message)
+          : 'Gagal mengirim balasan mentor.'
+      setReplyError(message)
+      console.error('Failed to send mentor reply:', message, err)
     } finally {
       setSendingReply(false)
     }
@@ -783,6 +913,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
     { href: '/mentor/submissions', label: 'Student Submissions', icon: 'fa-folder-tree' },
     { href: '/mentor/competition-prep', label: 'Competition Control', icon: 'fa-trophy' },
     { href: '/mentor/teams', label: 'Team Management', icon: 'fa-users-gear' },
+    { href: '/mentor/portfolio', label: 'Mentor Portfolio', icon: 'fa-medal' },
   ]
 
   const isActiveLink = (href: string, exact?: boolean) => {
@@ -797,6 +928,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
       }`}
       style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
     >
+      <MotionStyles />
       <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         body,
@@ -1065,13 +1197,14 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2.5 ml-auto relative">
             <button
+              ref={chatToggleRef}
               type="button"
               onClick={() => {
-                setChatOpen((prev) => {
-                  const next = !prev
-                  if (!next) setActiveTeamKey(null)
-                  return next
-                })
+                if (chatOpen) {
+                  closeChatPopup()
+                } else {
+                  setChatOpen(true)
+                }
               }}
               aria-label="Toggle mentor team messages"
               className={`relative p-2 rounded-xl border text-xs font-bold transition-transform duration-150 active:scale-90 flex items-center gap-1.5 cursor-pointer shadow-2xs ${
@@ -1112,6 +1245,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
             {/* Pop-up / Drawer Messages: Tahap 1 List Tim -> Tahap 2 Melebar & Geser ke Ruang Chat */}
             {chatOpen && (
               <div
+                ref={chatPanelRef}
                 key={selectedTeam ? 'chat-expanded' : 'chat-compact'}
                 className={`fixed top-16 right-4 sm:right-6 z-40 rounded-2xl border shadow-2xl overflow-hidden transition-all duration-300 ease-out flex flex-col md:flex-row animate-bubble-pop ${
                   selectedTeam
@@ -1148,10 +1282,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setChatOpen(false)
-                        setActiveTeamKey(null)
-                      }}
+                      onClick={closeChatPopup}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 cursor-pointer"
                       aria-label="Close messages panel"
                     >
@@ -1215,6 +1346,7 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
                     ) : (
                       filteredTeams.map((group) => {
                         const isSelected = selectedTeam?.key === group.key
+                        const effectiveUnread = isSelected ? 0 : group.unreadCount
                         return (
                           <button
                             key={group.key}
@@ -1238,9 +1370,9 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
                                 <span className="text-xs font-bold truncate">
                                   {group.teamName}
                                 </span>
-                                {group.unreadCount > 0 && (
+                                {effectiveUnread > 0 && (
                                   <span className="w-4 h-4 rounded-full bg-sky-500 text-white text-[10px] font-bold grid place-items-center shrink-0">
-                                    {group.unreadCount}
+                                    {effectiveUnread}
                                   </span>
                                 )}
                               </div>
@@ -1297,7 +1429,11 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
 
                       <button
                         type="button"
-                        onClick={() => setActiveTeamKey(null)}
+                        onClick={() => {
+                          activeTeamKeyRef.current = null
+                          setActiveTeamKey(null)
+                          setReplyError(null)
+                        }}
                         className="p-1.5 rounded-lg text-xs text-slate-400 hover:text-amber-500 cursor-pointer shrink-0"
                         title="Back to teams list"
                       >
@@ -1360,6 +1496,12 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
                       )}
                     </div>
 
+                    {replyError && (
+                      <div className="mx-3 mb-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 text-[11px] font-medium">
+                        {replyError}
+                      </div>
+                    )}
+
                     <form
                       onSubmit={handleSendReply}
                       className={`p-3 border-t flex items-center gap-2 ${
@@ -1369,7 +1511,10 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
                       <input
                         type="text"
                         value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
+                        onChange={(e) => {
+                          setReplyText(e.target.value)
+                          if (replyError) setReplyError(null)
+                        }}
                         placeholder={`Reply to ${selectedTeam.teamName}...`}
                         className={`flex-1 px-3.5 py-2 rounded-xl border text-xs outline-none ${
                           isDarkMode
@@ -1393,7 +1538,9 @@ function MentorDashboardContent({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="p-6 lg:p-8 max-w-275 flex-1">{children}</main>
+        <main className="p-6 lg:p-8 max-w-275 flex-1">
+          <PageTransition>{children}</PageTransition>
+        </main>
       </div>
     </div>
   )

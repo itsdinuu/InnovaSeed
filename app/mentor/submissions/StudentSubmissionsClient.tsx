@@ -314,7 +314,7 @@ export default function StudentSubmissionsClient() {
   })
 
   return (
-    <div className="space-y-6 relative">
+    <div className="mo-stagger space-y-6 relative">
       {/* EXPANDABLE CARD OVERLAY BACKGROUND */}
       <AnimatePresence>
         {activeCard && (

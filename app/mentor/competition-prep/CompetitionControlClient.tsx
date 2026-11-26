@@ -11,6 +11,7 @@ type CompetitionOption = {
 
 type ChecklistRecord = {
   id: string
+  studentId: string
   competitionId: string
   competitionTitle: string
   title: string
@@ -18,6 +19,11 @@ type ChecklistRecord = {
   dueDate?: string | null
   instructions?: string | null
   isCompleted: boolean
+}
+
+type ConnectedStudent = {
+  id: string
+  name: string
 }
 
 const LS_PREP_ITEMS = 'innovaseed_prep_items_v2'
@@ -45,8 +51,10 @@ export default function MentorCompetitionControlPage() {
   const [competitionOptions, setCompetitionOptions] =
     useState<CompetitionOption[]>(DEFAULT_COMPETITIONS)
   const [checklistItems, setChecklistItems] = useState<ChecklistRecord[]>([])
+  const [connectedStudents, setConnectedStudents] = useState<ConnectedStudent[]>([])
 
   // Form states for assigning a new preparation checklist item
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('')
   const [selectedCompId, setSelectedCompId] = useState<string>(DEFAULT_COMPETITIONS[0].id)
   const [taskTitle, setTaskTitle] = useState<string>('')
   const [taskCategory, setTaskCategory] = useState<string>(MENTORSHIP_STAGES[0])
@@ -77,10 +85,11 @@ export default function MentorCompetitionControlPage() {
         : 'Mentor'
 
     if (session?.user?.id) {
+      const mentorId = session.user.id
       const { data: profileRow } = await supabase
         .from('profiles')
-        .select('full_name, name')
-        .eq('id', session.user.id)
+        .select('full_name, name, mentor_code')
+        .eq('id', mentorId)
         .maybeSingle()
 
       if (profileRow) {
@@ -91,6 +100,56 @@ export default function MentorCompetitionControlPage() {
           resolvedMentor = p.name.trim()
         }
       }
+
+      // PAIRING GATE: resolve students connected to THIS mentor only
+      // (mentor_students links + teams whose mentor_code matches)
+      const connected = new Map<string, ConnectedStudent>()
+
+      const rawMentorCode =
+        profileRow && typeof (profileRow as Record<string, unknown>).mentor_code === 'string'
+          ? ((profileRow as Record<string, unknown>).mentor_code as string).trim().toUpperCase()
+          : ''
+
+      const { data: linkRows } = await supabase
+        .from('mentor_students')
+        .select('*')
+        .eq('mentor_id', mentorId)
+
+      const linkedStudentIds = new Set<string>()
+      for (const row of (linkRows || []) as Record<string, unknown>[]) {
+        const st = String(row.status || '').toLowerCase()
+        const sId = String(row.student_id || row.user_id || '')
+        if (sId && (!st || st === 'accepted' || st === 'active')) linkedStudentIds.add(sId)
+      }
+
+      const { data: teamRows } = await supabase.from('teams').select('*')
+      for (const tRow of (teamRows || []) as Record<string, unknown>[]) {
+        const tCode = String(tRow.mentor_code || '').trim().toUpperCase()
+        const leadId = String(tRow.lead_id ?? tRow.leader_id ?? tRow.user_id ?? '')
+        if (rawMentorCode && tCode === rawMentorCode && leadId) linkedStudentIds.add(leadId)
+      }
+
+      if (linkedStudentIds.size > 0) {
+        const idList = Array.from(linkedStudentIds)
+        const { data: studentProfiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, name, email')
+          .in('id', idList)
+
+        for (const sp of (studentProfiles || []) as Record<string, unknown>[]) {
+          const nm =
+            (typeof sp.full_name === 'string' && sp.full_name.trim()) ||
+            (typeof sp.name === 'string' && sp.name.trim()) ||
+            (typeof sp.email === 'string' ? sp.email.split('@')[0] : '') ||
+            'Student'
+          connected.set(String(sp.id), { id: String(sp.id), name: nm })
+        }
+      }
+
+      setConnectedStudents(Array.from(connected.values()))
+      setSelectedStudentId((prev) =>
+        connected.has(prev) ? prev : Array.from(connected.keys())[0] || ''
+      )
     }
     setMentorName(resolvedMentor)
 
@@ -117,18 +176,27 @@ export default function MentorCompetitionControlPage() {
       activeOptions.some((c) => c.id === prev) ? prev : activeOptions[0]?.id || ''
     )
 
-    // 2. Load assigned preparation checklists
+    // 2. Load assigned preparation checklists — ONLY for this mentor's connected students
     const itemsList: ChecklistRecord[] = []
     const { data: dbPrep, error: prepErr } = await supabase
       .from('competition_prep_materials')
       .select('*')
 
+    const visibleStudentIds = new Set(connectedStudents.map((s) => s.id))
+
     if (!prepErr && Array.isArray(dbPrep) && dbPrep.length > 0) {
       for (let i = 0; i < dbPrep.length; i++) {
         const r = (dbPrep[i] || {}) as Record<string, unknown>
+        const rowStudentId = String(
+          r.student_id ?? r.studentId ?? r.assigned_student_id ?? r.target_student_id ?? ''
+        )
+        // Pairing gate: skip items not assigned to one of THIS mentor's connected students
+        if (visibleStudentIds.size > 0 && (!rowStudentId || !visibleStudentIds.has(rowStudentId)))
+          continue
         const stRaw = String(r.status || '').toLowerCase()
         itemsList.push({
           id: r.id ? String(r.id) : `db-prep-${i}`,
+          studentId: rowStudentId,
           competitionId: String(r.competition_id || ''),
           competitionTitle: String(
             r.competition_title || r.competition_name || 'Target Competition'
@@ -149,8 +217,12 @@ export default function MentorCompetitionControlPage() {
           if (Array.isArray(parsedPrep)) {
             parsedPrep.forEach((r, idx) => {
               const stRaw = String(r.status || '').toLowerCase()
+              const rowStudentId = String(r.studentId || r.student_id || '')
+              if (visibleStudentIds.size > 0 && (!rowStudentId || !visibleStudentIds.has(rowStudentId)))
+                return
               itemsList.push({
                 id: r.id ? String(r.id) : `ls-prep-${idx}`,
+                studentId: rowStudentId,
                 competitionId: String(r.competitionId || r.competition_id || ''),
                 competitionTitle: String(
                   r.competitionTitle || r.competition_title || 'Target Competition'
@@ -192,6 +264,15 @@ export default function MentorCompetitionControlPage() {
     e.preventDefault()
     if (!taskTitle.trim()) return
 
+    // Pairing gate: must assign to a connected (paired) student
+    const targetStudent = connectedStudents.find((s) => s.id === selectedStudentId)
+    if (!targetStudent) {
+      notify(
+        'No connected student selected. You can only assign prep checklists to students paired with you by mentor code.'
+      )
+      return
+    }
+
     const matchedComp =
       competitionOptions.find((c) => c.id === selectedCompId) || competitionOptions[0]
 
@@ -202,6 +283,7 @@ export default function MentorCompetitionControlPage() {
 
     const newItem: ChecklistRecord = {
       id: `ls-prep-${Date.now()}`,
+      studentId: targetStudent.id,
       competitionId: compId,
       competitionTitle: compTitle,
       title: taskTitle.trim(),
@@ -215,6 +297,7 @@ export default function MentorCompetitionControlPage() {
       .from('competition_prep_materials')
       .insert([
         {
+          student_id: targetStudent.id,
           competition_id: compId,
           competition_title: compTitle,
           title: newItem.title,
@@ -251,7 +334,9 @@ export default function MentorCompetitionControlPage() {
     setTaskDueDate('')
     setTaskNotes('')
     setIsSubmittingTask(false)
-    notify(`Assigned checklist "${newItem.title}" for ${compTitle}!`)
+    notify(
+      `Assigned checklist "${newItem.title}" for ${targetStudent.name} — ${compTitle}!`
+    )
   }
 
   const handleDeleteChecklistItem = async (item: ChecklistRecord) => {
@@ -282,7 +367,7 @@ export default function MentorCompetitionControlPage() {
   const completedCount = checklistItems.filter((i) => i.isCompleted).length
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden space-y-6">
+    <div className="mo-stagger w-full max-w-full overflow-x-hidden space-y-6">
       {toastMessage && (
         <div className="fixed top-20 right-5 z-50 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs font-bold text-emerald-600 shadow-xl backdrop-blur-md">
           {toastMessage}
@@ -355,6 +440,36 @@ export default function MentorCompetitionControlPage() {
           </div>
 
           <form onSubmit={(e) => void handleAddChecklistItem(e)} className="space-y-3 text-xs">
+            <div>
+              <label className="block font-bold mb-1">Target Student (Paired)</label>
+              <select
+                value={selectedStudentId}
+                onChange={(e) => setSelectedStudentId(e.target.value)}
+                required
+                className={`w-full px-3 py-2 rounded-xl border outline-none ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-slate-100'
+                    : 'bg-[#fffcf9] border-[#d8c3ad] text-[#221a12]'
+                }`}
+              >
+                {connectedStudents.length === 0 ? (
+                  <option value="">No paired students yet</option>
+                ) : (
+                  connectedStudents.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              {connectedStudents.length === 0 && (
+                <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
+                  <i className="fa-solid fa-link"></i>
+                  Students must pair with your mentor code first — see Team Management.
+                </p>
+              )}
+            </div>
+
             <div>
               <label className="block font-bold mb-1">Target Competition</label>
               <select
@@ -443,8 +558,8 @@ export default function MentorCompetitionControlPage() {
 
             <button
               type="submit"
-              disabled={isSubmittingTask || competitionOptions.length === 0}
-              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 text-slate-950 font-extrabold text-xs hover:bg-amber-400 disabled:opacity-50 transition cursor-pointer shadow-sm"
+              disabled={isSubmittingTask || competitionOptions.length === 0 || connectedStudents.length === 0}
+              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 text-slate-950 font-extrabold text-xs hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer shadow-sm"
             >
               {isSubmittingTask ? 'Assigning...' : '+ Add to Student Prep Checklist'}
             </button>

@@ -236,9 +236,17 @@ export default function CompetitionPrepPage() {
       .select('*')
 
     if (!prepError && Array.isArray(prepRows) && prepRows.length > 0) {
-      loadedChecklist = prepRows.map((raw, idx) =>
-        mapPrepRow((raw || {}) as Record<string, unknown>, idx, 'mentor-prep')
-      )
+      loadedChecklist = prepRows
+        .filter((raw) => {
+          const r = (raw || {}) as Record<string, unknown>
+          // Pairing gate: students only see checklists assigned to THEM by their
+          // paired mentor (student_id column on competition_prep_materials)
+          const assignedStudent = String(
+            r.student_id ?? r.studentId ?? r.assigned_student_id ?? r.target_student_id ?? ''
+          )
+          return assignedStudent && assignedStudent === activeUserId
+        })
+        .map((raw, idx) => mapPrepRow((raw || {}) as Record<string, unknown>, idx, 'mentor-prep'))
     } else {
       try {
         const rawLsPrep = localStorage.getItem(LS_PREP_ITEMS)
@@ -352,7 +360,7 @@ export default function CompetitionPrepPage() {
   const ctaHref = buildMentorshipUrl(featuredCompetitionTitle)
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden space-y-6">
+    <div className="mo-stagger w-full max-w-full overflow-x-hidden space-y-6">
       {toastMessage && (
         <div className="fixed top-20 right-5 z-50 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs font-bold text-emerald-600 shadow-xl backdrop-blur-md">
           {toastMessage}
@@ -526,9 +534,8 @@ export default function CompetitionPrepPage() {
             No Checklist Items Assigned Yet
           </h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed wrap-break-words">
-            Once your mentor assigns preparation deliverables, they will appear here
-            automatically. You can also request PLEGO mentorship directly using the button
-            above.
+            Once your <b>paired mentor</b> assigns preparation deliverables, they will appear
+            here automatically. Not paired yet? Get mentored by PLEGO using the button above.
           </p>
         </div>
       ) : (

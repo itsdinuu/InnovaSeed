@@ -384,7 +384,7 @@ export default function PrototypeNotesPage() {
   const selectedProjectObj = projects.find((p) => p.id === selectedProjectId)
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
+    <div className="mo-stagger space-y-6 max-w-6xl mx-auto pb-12">
       {/* Header Card */}
       <div
         className={`border rounded-2xl p-6 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors ${
@@ -844,7 +844,7 @@ export default function PrototypeNotesPage() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs">
+        <div className="fixed bottom-6 right-6 z-50 mo-toast bg-slate-900 text-white border border-slate-700 px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs">
           <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
             <i className="fa-solid fa-check"></i>
           </span>

@@ -594,7 +594,7 @@ export default function MentorFeedbackClient() {
   const isRejected = currentLink?.status === 'rejected'
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="mo-stagger space-y-6 max-w-6xl mx-auto">
       {/* Header Card */}
       <div
         className={`border rounded-2xl p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
@@ -607,8 +607,8 @@ export default function MentorFeedbackClient() {
           <h1 className="text-2xl font-extrabold">Mentor Feedback &amp; Link</h1>
           <p className={`text-xs sm:text-sm mt-1 ${isDarkMode ? 'text-slate-400' : 'text-[#6b5a49]'}`}>
             Request a mentor connection using their{' '}
-            <code className="font-mono font-semibold">mentor_code</code>. Access unlocks once your
-            mentor approves.
+            <code className="font-mono font-semibold">mentor_code</code> (issued by the PLEGO Admin
+            after a paid enrollment). Access unlocks once your mentor approves.
           </p>
         </div>
 
@@ -663,6 +663,34 @@ export default function MentorFeedbackClient() {
             <strong className="text-amber-500 font-semibold">{activeProjectTitle}</strong>
           </p>
         </div>
+
+        {!isAccepted && (
+          <div
+            className={`p-3 rounded-xl border text-[11px] leading-relaxed ${
+              isDarkMode
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                : 'bg-[#FEF3C7]/70 border-[#F59E0B]/40 text-[#613b00]'
+            }`}
+          >
+            <b>Competition mentoring is paid.</b> Joining competitions is free — you only pay if
+            you want to be <b>mentored by PLEGO</b> for a competition. Purchase the mentorship
+            package via Lynk, then the PLEGO Admin issues your official{' '}
+            <code className="font-mono font-semibold">mentor_code</code> after payment. Enter it
+            below to send your pairing request.
+            <a
+              href={
+                process.env.NEXT_PUBLIC_PLEGO_MENTORSHIP_URL ||
+                'https://lynk.id/plegoindonesia/k829lkgw9g2d'
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F59E0B] text-[#0F172A] font-bold text-[11px] hover:bg-[#D97706] transition"
+            >
+              <i className="fa-solid fa-credit-card text-sm"></i>
+              <span>Pay Mentorship Package via Lynk</span>
+            </a>
+          </div>
+        )}
 
         {!isAccepted && (
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">

@@ -888,7 +888,7 @@ export default function PortfolioPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mo-stagger space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-600 border border-amber-500/30 mb-1.5">

@@ -171,6 +171,8 @@ export default function TeamManagementClient() {
   const [editMentorCode, setEditMentorCode] = useState('')
 
   const [toast, setToast] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<TeamRecord | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const triggerToast = (msg: string) => {
     setToast(msg)
@@ -678,7 +680,7 @@ export default function TeamManagementClient() {
   }
 
   async function handleDeleteTeam(team: TeamRecord) {
-    if (!confirm('Are you sure you want to remove this team connection?')) return
+    setIsDeleting(true)
 
     if (team.is_virtual && team.lead_id && mentorUserId) {
       await supabase
@@ -700,10 +702,13 @@ export default function TeamManagementClient() {
     } else {
       triggerToast(`Error: ${error.message}`)
     }
+
+    setIsDeleting(false)
+    setDeleteTarget(null)
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="mo-stagger space-y-6 max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold">Faculty Team Control Panel 👥</h1>
@@ -909,7 +914,7 @@ export default function TeamManagementClient() {
               <div className="pt-3 border-t border-inherit flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => void handleDeleteTeam(team)}
+                  onClick={() => setDeleteTarget(team)}
                   className="px-3 py-2 text-xs font-bold bg-red-500/10 text-red-600 border border-red-500/30 rounded-xl hover:bg-red-500/20 transition cursor-pointer"
                 >
                   <i className="fa-solid fa-trash mr-1"></i> Delete
@@ -1042,6 +1047,75 @@ export default function TeamManagementClient() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 grid place-items-center p-4">
+          <div
+            className="mo-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => !isDeleting && setDeleteTarget(null)}
+          />
+          <div
+            className={`mo-pop relative z-10 w-full max-w-sm rounded-2xl border p-6 shadow-2xl ${
+              isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-[#d8c3ad]'
+            }`}
+          >
+            <div className="w-11 h-11 rounded-full bg-red-500/15 text-red-500 grid place-items-center mb-4">
+              <i className="fa-solid fa-trash text-lg"></i>
+            </div>
+            <h3 className="font-bold text-base">Delete team?</h3>
+            <p
+              className={`text-xs mt-1.5 leading-relaxed ${
+                isDarkMode ? 'text-slate-400' : 'text-[#534434]'
+              }`}
+            >
+              {deleteTarget.is_virtual ? (
+                <>
+                  This will remove your mentor connection with{' '}
+                  <strong>{deleteTarget.team_name}</strong>. The student&apos;s team itself stays
+                  intact, but you will no longer see or manage it here.
+                </>
+              ) : (
+                <>
+                  You are about to permanently delete{' '}
+                  <strong>{deleteTarget.team_name}</strong>. This action cannot be undone.
+                </>
+              )}
+            </p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={isDeleting}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition cursor-pointer disabled:opacity-50 ${
+                  isDarkMode
+                    ? 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                    : 'border-[#d8c3ad] text-[#534434] hover:bg-[#fff1e5]'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteTeam(deleteTarget)}
+                disabled={isDeleting}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-red-500 text-white hover:bg-red-600 transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isDeleting ? (
+                  <>
+                    <i className="fa-solid fa-spinner fa-spin"></i>
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-solid fa-trash"></i>
+                    <span>Yes, delete</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

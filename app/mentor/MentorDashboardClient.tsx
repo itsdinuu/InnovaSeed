@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { useTheme } from '@/context/ThemeContext'
+import { CountUp } from '@/components/motion/count-up'
 
 type MenteeProjectOverview = {
   linkId: string
@@ -326,7 +327,7 @@ export default function MentorDashboardClient() {
   ).length
 
   return (
-    <div className="space-y-6">
+    <div className="mo-stagger space-y-6">
       <div
         className={`p-6 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
           isDarkMode
@@ -355,35 +356,39 @@ export default function MentorDashboardClient() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div
-          className={`p-5 rounded-2xl border ${
+          className={`mo-lift p-5 rounded-2xl border ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
           }`}
         >
           <div className="text-xs font-semibold text-slate-400">Connected Students</div>
-          <div className="text-2xl font-extrabold mt-1 text-amber-500">{acceptedCount}</div>
+          <div className="text-2xl font-extrabold mt-1 text-amber-500">
+            <CountUp value={acceptedCount} />
+          </div>
         </div>
         <div
-          className={`p-5 rounded-2xl border ${
+          className={`mo-lift p-5 rounded-2xl border ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
           }`}
         >
           <div className="text-xs font-semibold text-slate-400">Pending Link Requests</div>
-          <div className="text-2xl font-extrabold mt-1 text-amber-500">{pendingCount}</div>
+          <div className="text-2xl font-extrabold mt-1 text-amber-500">
+            <CountUp value={pendingCount} />
+          </div>
         </div>
         <div
-          className={`p-5 rounded-2xl border ${
+          className={`mo-lift p-5 rounded-2xl border ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
           }`}
         >
           <div className="text-xs font-semibold text-slate-400">Ready for Completion Review</div>
           <div className="text-2xl font-extrabold mt-1 text-emerald-500">
-            {readyForReviewCount}
+            <CountUp value={readyForReviewCount} />
           </div>
         </div>
       </div>
 
       <div
-        className={`rounded-2xl border p-6 ${
+        className={`mo-lift rounded-2xl border p-6 ${
           isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
         }`}
       >
@@ -423,7 +428,7 @@ export default function MentorDashboardClient() {
               return (
                 <div
                   key={item.linkId}
-                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border transition ${
+                  className={`mo-lift flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border transition ${
                     isReadyForReview
                       ? isDarkMode
                         ? 'bg-emerald-500/10 border-emerald-500/40'

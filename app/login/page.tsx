@@ -1,121 +1,131 @@
 "use client"
 
-import Image from 'next/image'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
-import Link from 'next/link'
+import Image from "next/image"
+import Link from "next/link"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabaseClient"
 
-type LoginMethod = 'email' | 'phone'
+type LoginMethod = "email" | "phone"
+
+const ADMIN_EMAILS = ["admininnovaseed@gmail.com", "plego@gmail.com"]
+
+const ROLE_CONFIG = {
+  student: {
+    key: "student",
+    icon: "fa-graduation-cap",
+    title: "Student Innovator",
+    desc: "Access your individual self-paced workspace, team code hub, and research tools.",
+    workspace: "Student Dashboard",
+    link: "/dashboard/student",
+  },
+  mentor: {
+    key: "mentor",
+    icon: "fa-user-tie",
+    title: "PLEGO Mentor",
+    desc: "Review mentored students/teams, share feedback, and manage guidance codes.",
+    workspace: "Mentor Dashboard",
+    link: "/mentor",
+  },
+} as const
+
+function normalizePhoneNumber(rawPhone: string): string {
+  const cleaned = rawPhone.replace(/[^\d+]/g, "").trim()
+  if (!cleaned) return ""
+  if (cleaned.startsWith("+")) return cleaned
+  if (cleaned.startsWith("0")) return `+62${cleaned.slice(1)}`
+  if (cleaned.startsWith("62")) return `+${cleaned}`
+  return `+62${cleaned}`
+}
 
 export default function LoginPage() {
   const router = useRouter()
-  const [activeRole, setActiveRole] = useState<'student' | 'mentor'>('student')
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>('email')
+  const [activeRole, setActiveRole] = useState<"student" | "mentor">("student")
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>("email")
 
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState("")
+  const [phone, setPhone] = useState("")
+  const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
+  const [errorMessage, setErrorMessage] = useState("")
 
   // Forgot Password modal state
   const [showForgotModal, setShowForgotModal] = useState(false)
-  const [forgotIdentifier, setForgotIdentifier] = useState('')
+  const [forgotIdentifier, setForgotIdentifier] = useState("")
   const [forgotLoading, setForgotLoading] = useState(false)
-  const [forgotError, setForgotError] = useState('')
-  const [forgotSuccess, setForgotSuccess] = useState('')
+  const [forgotError, setForgotError] = useState("")
+  const [forgotSuccess, setForgotSuccess] = useState("")
 
-  const roleConfig = {
-    student: {
-      key: 'student',
-      icon: 'fa-graduation-cap',
-      title: 'Student Innovator',
-      desc: 'Access your individual self-paced workspace, team code hub, and research tools.',
-      workspace: 'Student Dashboard',
-      link: '/dashboard/student',
-    },
-    mentor: {
-      key: 'mentor',
-      icon: 'fa-user-tie',
-      title: 'PLEGO Mentor',
-      desc: 'Review mentored students/teams, share feedback, and manage guidance codes.',
-      workspace: 'Mentor Dashboard',
-      link: '/mentor',
-    },
-  } as const
+  const roles = [ROLE_CONFIG.student, ROLE_CONFIG.mentor]
 
-  const roles = [roleConfig.student, roleConfig.mentor]
+  const resolveEmailByPhone = async (rawPhone: string): Promise<string> => {
+    const normalizedPhone = normalizePhoneNumber(rawPhone)
+    if (!normalizedPhone) {
+      throw new Error("Please enter a valid phone number.")
+    }
 
-  const normalizePhoneNumber = (rawPhone: string) => {
-    const cleaned = rawPhone.replace(/[^\d+]/g, '').trim()
-    if (!cleaned) return ''
-    if (cleaned.startsWith('+')) return cleaned
-    if (cleaned.startsWith('0')) return `+62${cleaned.slice(1)}`
-    if (cleaned.startsWith('62')) return `+${cleaned}`
-    return `+62${cleaned}`
+    const candidates = Array.from(
+      new Set([
+        normalizedPhone,
+        normalizedPhone.replace(/^\+/, ""),
+        normalizedPhone.startsWith("+62") ? `0${normalizedPhone.slice(3)}` : normalizedPhone,
+      ])
+    ).filter(Boolean)
+
+    const { data: matchedProfile, error: lookupError } = await supabase
+      .from("profiles")
+      .select("email")
+      .in("phone", candidates)
+      .limit(1)
+      .maybeSingle()
+
+    if (lookupError) {
+      throw new Error(`Phone lookup failed: ${lookupError.message}`)
+    }
+
+    if (!matchedProfile?.email) {
+      throw new Error(
+        "No account found with this phone number. Please register or sign in with your email address."
+      )
+    }
+
+    return matchedProfile.email.trim().toLowerCase()
   }
 
-  const handleRoleSelect = (role: 'student' | 'mentor') => {
+  const handleRoleSelect = (role: "student" | "mentor") => {
     setActiveRole(role)
-    setEmail('')
-    setPhone('')
-    setPassword('')
-    setErrorMessage('')
+    setErrorMessage("")
   }
 
   const handleMethodSwitch = (method: LoginMethod) => {
     setLoginMethod(method)
-    setErrorMessage('')
+    setErrorMessage("")
   }
 
   const openForgotModal = () => {
-    setForgotIdentifier(loginMethod === 'email' ? email : phone)
-    setForgotError('')
-    setForgotSuccess('')
+    setForgotIdentifier(loginMethod === "email" ? email : phone)
+    setForgotError("")
+    setForgotSuccess("")
     setShowForgotModal(true)
   }
 
   const handleSendResetLink = async (e: React.FormEvent) => {
     e.preventDefault()
     setForgotLoading(true)
-    setForgotError('')
-    setForgotSuccess('')
+    setForgotError("")
+    setForgotSuccess("")
 
     try {
       const raw = forgotIdentifier.trim()
       if (!raw) {
-        throw new Error('Please enter your registered email address or phone number.')
+        throw new Error("Please enter your registered email address or phone number.")
       }
 
-      let targetEmail = raw.toLowerCase()
-
-      if (!raw.includes('@')) {
-        const normalizedPhone = normalizePhoneNumber(raw)
-        if (!normalizedPhone) {
-          throw new Error('Please enter a valid email address or phone number.')
-        }
-
-        const { data: matchedProfile, error: lookupError } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('phone', normalizedPhone)
-          .maybeSingle()
-
-        if (lookupError) {
-          throw new Error(`Lookup failed: ${lookupError.message}`)
-        }
-
-        if (!matchedProfile?.email) {
-          throw new Error(
-            'No account found with this phone number. Try entering your email address instead.'
-          )
-        }
-
-        targetEmail = matchedProfile.email
-      }
+      const targetEmail = raw.includes("@")
+        ? raw.toLowerCase()
+        : await resolveEmailByPhone(raw)
 
       const redirectUrl = `${window.location.origin}/reset-password`
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
@@ -132,7 +142,7 @@ export default function LoginPage() {
       const message =
         err instanceof Error
           ? err.message
-          : 'Failed to send password reset email. Please try again.'
+          : "Failed to send password reset email. Please try again."
       setForgotError(message)
     } finally {
       setForgotLoading(false)
@@ -142,34 +152,16 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    setErrorMessage('')
+    setErrorMessage("")
 
     try {
-      let resolvedEmail = email.trim()
+      const resolvedEmail =
+        loginMethod === "phone"
+          ? await resolveEmailByPhone(phone)
+          : email.trim().toLowerCase()
 
-      if (loginMethod === 'phone') {
-        const normalizedPhone = normalizePhoneNumber(phone)
-        if (!normalizedPhone) {
-          throw new Error('Please enter a valid phone number.')
-        }
-
-        const { data: matchedProfile, error: lookupError } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('phone', normalizedPhone)
-          .maybeSingle()
-
-        if (lookupError) {
-          throw new Error(`Phone lookup failed: ${lookupError.message}`)
-        }
-
-        if (!matchedProfile?.email) {
-          throw new Error(
-            'No account found with this phone number. Please register or sign in with your email address.'
-          )
-        }
-
-        resolvedEmail = matchedProfile.email
+      if (!resolvedEmail) {
+        throw new Error("Please enter a valid email address.")
       }
 
       const { data: authData, error: authError } =
@@ -181,45 +173,62 @@ export default function LoginPage() {
       if (authError) throw authError
 
       const user = authData?.user
-      if (!user) throw new Error('Authentication user session not found.')
+      if (!user) throw new Error("Authentication user session not found.")
 
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
+      let profileData: { role?: string | null } | null = null
+
+      const { data: byId, error: byIdError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
         .maybeSingle()
 
-      if (profileError) {
-        console.warn('Profile role lookup warning:', profileError.message)
+      if (byIdError) {
+        console.warn("Profile role lookup warning:", byIdError.message)
+      }
+      profileData = byId
+
+      if (!profileData?.role && user.email) {
+        const { data: byEmail } = await supabase
+          .from("profiles")
+          .select("role")
+          .ilike("email", user.email)
+          .maybeSingle()
+        if (byEmail) profileData = byEmail
       }
 
       const dbRole = String(
-        profileData?.role || user.user_metadata?.role || ''
+        profileData?.role ||
+          user.user_metadata?.role ||
+          user.app_metadata?.role ||
+          ""
       )
         .trim()
         .toLowerCase()
 
-      const emailLower = String(user.email || '').trim().toLowerCase()
+      const emailLower = String(user.email || resolvedEmail || "")
+        .trim()
+        .toLowerCase()
+
       const isAdminAccount =
-        dbRole === 'admin' ||
-        emailLower === 'plego@gmail.com' ||
-        emailLower.startsWith('admin')
+        dbRole === "admin" ||
+        ADMIN_EMAILS.includes(emailLower) ||
+        emailLower.startsWith("admin")
 
       if (isAdminAccount) {
-        router.replace('/admin')
+        router.replace("/admin")
         return
       }
 
-      const resolvedRole: 'student' | 'mentor' =
-        dbRole === 'mentor' || dbRole === 'student' ? dbRole : activeRole
+      const resolvedRole: "student" | "mentor" =
+        dbRole === "mentor" || dbRole === "student" ? dbRole : activeRole
 
-      const selectedConfig = roleConfig[resolvedRole]
-      router.replace(selectedConfig.link)
+      router.replace(ROLE_CONFIG[resolvedRole].link)
     } catch (err: unknown) {
       const message =
         err instanceof Error
           ? err.message
-          : 'Login failed. Please check your credentials.'
+          : "Login failed. Please check your credentials."
       setErrorMessage(message)
       setLoading(false)
     }
@@ -242,7 +251,7 @@ export default function LoginPage() {
             <div className="text-left">
               <div className="flex items-center gap-1.5">
                 <b className="text-base font-extrabold text-slate-900">InnovaSeed</b>
-                <span className="text-[10px] border border-amber-500/30 bg-amber-50 text-amber-700 rounded px-1.5 py-0.2 font-semibold">
+                <span className="text-[10px] border border-amber-500/30 bg-amber-50 text-amber-700 rounded px-1.5 py-0.5 font-semibold">
                   v2.0
                 </span>
               </div>
@@ -262,11 +271,11 @@ export default function LoginPage() {
             <button
               key={r.key}
               type="button"
-              onClick={() => handleRoleSelect(r.key as 'student' | 'mentor')}
+              onClick={() => handleRoleSelect(r.key)}
               className={`text-left rounded-2xl border p-3.5 relative transition-all duration-300 ease-out cursor-pointer ${
                 activeRole === r.key
-                  ? 'border-amber-500 bg-amber-50/70 shadow-sm ring-2 ring-amber-500/20 scale-[1.01]'
-                  : 'border-slate-200 hover:bg-slate-50'
+                  ? "border-amber-500 bg-amber-50/70 shadow-sm ring-2 ring-amber-500/20 scale-[1.01]"
+                  : "border-slate-200 hover:bg-slate-50"
               }`}
             >
               <div className="flex items-center justify-between mb-2">
@@ -291,11 +300,11 @@ export default function LoginPage() {
         <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100 border border-slate-200 mt-5">
           <button
             type="button"
-            onClick={() => handleMethodSwitch('email')}
+            onClick={() => handleMethodSwitch("email")}
             className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              loginMethod === 'email'
-                ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                : 'text-slate-500 hover:text-slate-800'
+              loginMethod === "email"
+                ? "bg-white text-slate-900 shadow-xs border border-slate-200/80"
+                : "text-slate-500 hover:text-slate-800"
             }`}
           >
             <i className="fa-regular fa-envelope text-amber-600"></i>
@@ -303,11 +312,11 @@ export default function LoginPage() {
           </button>
           <button
             type="button"
-            onClick={() => handleMethodSwitch('phone')}
+            onClick={() => handleMethodSwitch("phone")}
             className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              loginMethod === 'phone'
-                ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                : 'text-slate-500 hover:text-slate-800'
+              loginMethod === "phone"
+                ? "bg-white text-slate-900 shadow-xs border border-slate-200/80"
+                : "text-slate-500 hover:text-slate-800"
             }`}
           >
             <i className="fa-solid fa-phone text-amber-600"></i>
@@ -323,7 +332,7 @@ export default function LoginPage() {
 
         {/* Login Form */}
         <form onSubmit={handleLogin} className="space-y-4 mt-5">
-          {loginMethod === 'email' ? (
+          {loginMethod === "email" ? (
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Email Address
@@ -378,7 +387,7 @@ export default function LoginPage() {
             <div className="relative">
               <i className="fa-solid fa-lock absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
               <input
-                type={showPassword ? 'text' : 'password'}
+                type={showPassword ? "text" : "password"}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -390,7 +399,7 @@ export default function LoginPage() {
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
-                <i className={`fa-regular ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                <i className={`fa-regular ${showPassword ? "fa-eye-slash" : "fa-eye"}`}></i>
               </button>
             </div>
           </div>
@@ -413,8 +422,8 @@ export default function LoginPage() {
             className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-xs font-bold transition bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 cursor-pointer shadow-md mt-1"
           >
             {loading
-              ? 'Authenticating...'
-              : `Sign In to ${roleConfig[activeRole].workspace} →`}
+              ? "Authenticating..."
+              : `Sign In to ${ROLE_CONFIG[activeRole].workspace} →`}
           </button>
         </form>
 
@@ -507,7 +516,7 @@ export default function LoginPage() {
                   disabled={forgotLoading}
                   className="w-2/3 py-2.5 bg-amber-500 text-white font-bold text-xs rounded-xl hover:bg-amber-600 disabled:opacity-50 transition shadow-md cursor-pointer"
                 >
-                  {forgotLoading ? 'Sending Link...' : 'Send Reset Link →'}
+                  {forgotLoading ? "Sending Link..." : "Send Reset Link →"}
                 </button>
               </div>
             </form>

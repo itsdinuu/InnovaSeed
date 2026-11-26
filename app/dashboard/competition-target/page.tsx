@@ -494,7 +494,7 @@ export default function CompetitionTargetPage() {
       : studentName
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden space-y-6">
+    <div className="mo-stagger w-full max-w-full overflow-x-hidden space-y-6">
       {toastMessage && (
         <div className="fixed top-20 right-5 z-50 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs font-bold text-emerald-600 shadow-xl backdrop-blur-md">
           {toastMessage}

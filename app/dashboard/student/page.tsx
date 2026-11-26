@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useTheme } from '@/context/ThemeContext'
+import { CountUp } from '@/components/motion/count-up'
 
 type ProjectData = {
   id: string
@@ -663,7 +664,7 @@ export default function StudentDashboardPage() {
   const recentConversations = conversationList.slice(-3)
 
   return (
-    <div className="space-y-6">
+    <div className="mo-stagger space-y-6">
       {/* Welcome Header */}
       <div
         className={`flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl border shadow-xs transition-colors ${
@@ -700,9 +701,9 @@ export default function StudentDashboardPage() {
       </div>
 
       {/* Top Metrics Ribbon */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="mo-stagger grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div
-          className={`p-5 rounded-xl border shadow-xs flex flex-col justify-between ${
+          className={`mo-lift p-5 rounded-xl border shadow-xs flex flex-col justify-between ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
           }`}
         >
@@ -724,7 +725,7 @@ export default function StudentDashboardPage() {
         </div>
 
         <div
-          className={`p-5 rounded-xl border shadow-xs flex flex-col justify-between ${
+          className={`mo-lift p-5 rounded-xl border shadow-xs flex flex-col justify-between ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
           }`}
         >
@@ -734,7 +735,7 @@ export default function StudentDashboardPage() {
           </div>
           <div className="mt-2">
             <div className="flex items-baseline gap-2">
-              <h3 className="text-lg font-bold">{progressPercentage}%</h3>
+              <h3 className="text-lg font-bold"><CountUp value={progressPercentage} suffix="%" /></h3>
               <span className="text-xs text-slate-400">
                 ({taskStats.completed}/{taskStats.total} Complete)
               </span>
@@ -745,7 +746,7 @@ export default function StudentDashboardPage() {
               }`}
             >
               <div
-                className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                className="mo-bar bg-amber-500 h-full rounded-full transition-all duration-500"
                 style={{ width: `${progressPercentage}%` }}
               ></div>
             </div>
@@ -753,7 +754,7 @@ export default function StudentDashboardPage() {
         </div>
 
         <div
-          className={`p-5 rounded-xl border shadow-xs flex flex-col justify-between ${
+          className={`mo-lift p-5 rounded-xl border shadow-xs flex flex-col justify-between ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
           }`}
         >
@@ -779,7 +780,7 @@ export default function StudentDashboardPage() {
         </div>
 
         <div
-          className={`p-5 rounded-xl border shadow-xs flex flex-col justify-between ${
+          className={`mo-lift p-5 rounded-xl border shadow-xs flex flex-col justify-between ${
             isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-[#d8c3ad]'
           }`}
         >
@@ -879,7 +880,7 @@ export default function StudentDashboardPage() {
                     }`}
                   >
                     <div
-                      className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                      className="mo-bar bg-amber-500 h-full rounded-full transition-all duration-500"
                       style={{ width: `${progressPercentage}%` }}
                     ></div>
                   </div>

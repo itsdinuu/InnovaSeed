@@ -494,6 +494,32 @@ function GradingRubricsContent() {
     setPublishingPortfolio(true)
 
     try {
+      // 1. SNAPSHOT the approved project into portfolio_projects so it stays
+      //    visible in the student's Portfolio AFTER the workspace is reset.
+      if (selectedItem.projectId) {
+        const snapshotPayload: Record<string, unknown> = {
+          title: selectedItem.projectTitle,
+          tagline:
+            selectedItem.projectSubtitle ||
+            `Mentor-approved innovation project (${selectedItem.completedMilestones}/${selectedItem.totalMilestones} milestones completed).`,
+          category: selectedItem.stageLabel || 'Innovation Project',
+          status: 'Approved by Mentor',
+          feasibility_score: '100%',
+          author_name: selectedItem.teamName,
+          team_name: selectedItem.teamName,
+          demo_url: '#',
+        }
+        if (selectedItem.teamName) snapshotPayload.team_name = selectedItem.teamName
+
+        const { error: snapErr } = await supabase
+          .from('portfolio_projects')
+          .insert([snapshotPayload])
+
+        if (snapErr) {
+          console.warn('Portfolio snapshot insert warning:', snapErr.message)
+        }
+      }
+
       if (selectedItem.projectId) {
         const { error: projErr } = await supabase
           .from('projects')
@@ -504,6 +530,24 @@ function GradingRubricsContent() {
           .eq('id', selectedItem.projectId)
 
         if (projErr) throw projErr
+      }
+
+      // 2. RESET the workspace: delete ALL task milestones for this project/student
+      //    and reset project progress + status so a fresh cycle can start.
+      if (selectedItem.projectId) {
+        await supabase
+          .from('project_tasks')
+          .delete()
+          .eq('project_id', selectedItem.projectId)
+      }
+      if (selectedItem.studentId) {
+        await supabase.from('project_tasks').delete().eq('user_id', selectedItem.studentId)
+      }
+      if (selectedItem.projectId) {
+        await supabase
+          .from('projects')
+          .update({ approval_status: 'in_progress', progress_percentage: 0 })
+          .eq('id', selectedItem.projectId)
       }
 
       const approvalNote =
@@ -621,7 +665,7 @@ function GradingRubricsContent() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mo-stagger space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
